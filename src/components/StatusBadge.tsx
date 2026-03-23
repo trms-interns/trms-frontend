@@ -12,7 +12,7 @@ const config: Record<string, { bg: string; text: string; label: string }> = {
     // Priority
     emergency: { bg: 'bg-red-500/15', text: 'text-red-400', label: 'Emergency' },
     urgent: { bg: 'bg-amber-500/15', text: 'text-amber-400', label: 'Urgent' },
-    routine: { bg: 'bg-blue-500/15', text: 'text-blue-400', label: 'Routine' },
+    routine: { bg: 'bg-[#2b4968]/15', text: 'text-[#2b4968]', label: 'Routine' },
     // Status
     synced: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', label: '✓ Synced' },
     pending: { bg: 'bg-amber-500/15', text: 'text-amber-400', label: '⏳ Pending' },

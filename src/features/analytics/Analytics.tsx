@@ -3,7 +3,14 @@ import { useLanguage } from '../../context/LanguageContext'
 import { useTheme } from '../../context/ThemeContext'
 import StatCard from '../../components/StatCard'
 import { mockAuditLog, referralVolumeData, topReasonsData, rejectionRateData } from '../../data/mockData'
-import { BarChart3, Clock, RefreshCw, Shield, User, FileText } from 'lucide-react'
+import {
+    IconChartBar,
+    IconClock,
+    IconRefresh,
+    IconShield,
+    IconUser,
+    IconFileText,
+} from '@tabler/icons-react'
 import { Line, Bar, Doughnut } from 'react-chartjs-2'
 import {
     Chart as ChartJS, CategoryScale, LinearScale, PointElement,
@@ -21,8 +28,8 @@ export default function Analytics() {
         maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: {
-            x: { grid: { display: false }, ticks: { color: isDark ? '#94a3b8' : '#64748b', font: { size: 11 } } },
-            y: { grid: { color: isDark ? 'rgba(51,65,85,0.3)' : 'rgba(226,232,240,0.6)' }, ticks: { color: isDark ? '#94a3b8' : '#64748b', font: { size: 11 } } },
+            x: { grid: { display: false }, ticks: { color: isDark ? '#2b4968' : '#2b4968', font: { size: 11 } } },
+            y: { grid: { color: isDark ? 'rgba(43,73,104,0.3)' : 'rgba(43,73,104,0.2)' }, ticks: { color: isDark ? '#2b4968' : '#2b4968', font: { size: 11 } } },
         },
     }
 
@@ -32,7 +39,7 @@ export default function Analytics() {
         plugins: {
             legend: {
                 position: 'bottom' as const,
-                labels: { color: isDark ? '#94a3b8' : '#64748b', font: { size: 11 }, padding: 15, usePointStyle: true },
+                labels: { color: isDark ? '#2b4968' : '#2b4968', font: { size: 11 }, padding: 15, usePointStyle: true },
             },
         },
     }
@@ -45,9 +52,9 @@ export default function Analytics() {
 
             {/* KPI cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <StatCard icon={<FileText size={20} />} label={t('ana.totalMonth')} value={210} trend="11% vs last month" trendUp={true} color="from-primary-500 to-primary-700" />
-                <StatCard icon={<Clock size={20} />} label={t('ana.avgTriageTime')} value="2.4h" color="from-amber-500 to-amber-600" />
-                <StatCard icon={<RefreshCw size={20} />} label={t('ana.feedbackRate')} value="73%" trend="5% improvement" trendUp={true} color="from-accent-500 to-accent-600" />
+                <StatCard icon={<IconFileText size={20} />} label={t('ana.totalMonth')} value={210} trend="11% vs last month" trendUp={true} color="from-primary-500 to-primary-700" />
+                <StatCard icon={<IconClock size={20} />} label={t('ana.avgTriageTime')} value="2.4h" color="from-amber-500 to-amber-600" />
+                <StatCard icon={<IconRefresh size={20} />} label={t('ana.feedbackRate')} value="73%" trend="5% improvement" trendUp={true} color="from-accent-500 to-accent-600" />
             </div>
 
             {/* Charts row */}
@@ -69,7 +76,7 @@ export default function Analytics() {
                             indexAxis: 'y' as const,
                             scales: {
                                 ...baseChartOptions.scales,
-                                x: { ...baseChartOptions.scales.x, grid: { color: isDark ? 'rgba(51,65,85,0.3)' : 'rgba(226,232,240,0.6)' } },
+                                x: { ...baseChartOptions.scales.x, grid: { color: isDark ? 'rgba(43,73,104,0.3)' : 'rgba(43,73,104,0.2)' } },
                                 y: { ...baseChartOptions.scales.y, grid: { display: false } },
                             },
                         }} />
@@ -90,14 +97,14 @@ export default function Analytics() {
                 {/* Audit log */}
                 <div className={`lg:col-span-3 ${cardClass}`}>
                     <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                        <Shield size={14} className="text-primary-400" />
+                        <IconShield size={14} className="text-primary-400" />
                         {t('ana.complianceAudit')}
                     </h3>
                     <div className="overflow-x-auto">
                         <table className="w-full text-xs">
                             <thead>
                                 <tr className={`border-b ${isDark ? 'border-surface-700' : 'border-surface-200'}`}>
-                                    <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">User</th>
+                                    <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">IconUser</th>
                                     <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">Action</th>
                                     <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">Record</th>
                                     <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">Time</th>
@@ -109,7 +116,7 @@ export default function Analytics() {
                                         <td className="py-2.5">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-6 h-6 rounded-full bg-primary-500/15 flex items-center justify-center">
-                                                    <User size={10} className="text-primary-400" />
+                                                    <IconUser size={10} className="text-primary-400" />
                                                 </div>
                                                 <span className="font-medium">{entry.user}</span>
                                             </div>

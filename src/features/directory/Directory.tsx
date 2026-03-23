@@ -2,7 +2,14 @@ import React, { useState } from 'react'
 import { useLanguage } from '../../context/LanguageContext'
 import { useTheme } from '../../context/ThemeContext'
 import { myFacilityStaff, myFacilityEquipment } from '../../data/mockData'
-import { Users, Wrench, Search, CheckCircle, AlertTriangle, Clock } from 'lucide-react'
+import {
+    IconUsers,
+    IconTool,
+    IconSearch,
+    IconCircleCheck,
+    IconAlertTriangle,
+    IconClock,
+} from '@tabler/icons-react'
 
 type StaffStatus = 'available' | 'occupied' | 'off-duty'
 type EquipmentStatus = 'available' | 'occupied' | 'damaged'
@@ -17,10 +24,10 @@ function StatusPill({ status }: { status: StaffStatus | EquipmentStatus }) {
     const c = config[status]
     return (
         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border whitespace-nowrap ${c.cls}`}>
-            {status === 'available' && <CheckCircle size={9} />}
-            {status === 'occupied' && <Clock size={9} />}
-            {status === 'off-duty' && <Clock size={9} />}
-            {status === 'damaged' && <AlertTriangle size={9} />}
+            {status === 'available' && <IconCircleCheck size={9} />}
+            {status === 'occupied' && <IconClock size={9} />}
+            {status === 'off-duty' && <IconClock size={9} />}
+            {status === 'damaged' && <IconAlertTriangle size={9} />}
             {c.label}
         </span>
     )
@@ -61,23 +68,23 @@ export default function Directory() {
                 {/* Summary chips */}
                 <div className="flex gap-2 flex-wrap">
                     <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                        <CheckCircle size={12} /> {staffAvail} staff available
+                        <IconCircleCheck size={12} /> {staffAvail} staff available
                     </span>
                     <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                        <CheckCircle size={12} /> {equipAvail} equipment available
+                        <IconCircleCheck size={12} /> {equipAvail} equipment available
                     </span>
                     {equipDamage > 0 && (
                         <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-red-500/10 text-red-500 border border-red-500/20">
-                            <AlertTriangle size={12} /> {equipDamage} need repair
+                            <IconAlertTriangle size={12} /> {equipDamage} need repair
                         </span>
                     )}
                 </div>
             </div>
 
-            {/* Search */}
+            {/* IconSearch */}
             <div className={`flex items-center gap-3 p-3 rounded-2xl border ${isDark ? 'bg-surface-800/60 border-surface-700/50' : 'bg-white border-surface-200'}`}>
                 <div className="relative flex-1">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
+                    <IconSearch size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
                     <input
                         type="text"
                         placeholder={t('dir.searchStaff')}
@@ -93,7 +100,7 @@ export default function Directory() {
                 <div className={card}>
                     <div className="flex items-center gap-2 mb-4">
                         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center">
-                            <Users size={15} className="text-white" />
+                            <IconUsers size={15} className="text-white" />
                         </div>
                         <div>
                             <h3 className="text-sm font-bold">{t('dir.staff')}</h3>
@@ -132,7 +139,7 @@ export default function Directory() {
                 <div className={card}>
                     <div className="flex items-center gap-2 mb-4">
                         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-500 to-accent-600 flex items-center justify-center">
-                            <Wrench size={15} className="text-white" />
+                            <IconTool size={15} className="text-white" />
                         </div>
                         <div>
                             <h3 className="text-sm font-bold">{t('dir.equipment')}</h3>
@@ -147,7 +154,7 @@ export default function Directory() {
                                         item.status === 'occupied' ? 'bg-amber-500/15 text-amber-500' :
                                             'bg-red-500/15 text-red-500'
                                     }`}>
-                                    <Wrench size={14} />
+                                    <IconTool size={14} />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-semibold truncate">{item.name}</p>

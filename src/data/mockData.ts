@@ -342,8 +342,8 @@ export const referralTrendData = {
         {
             label: 'Referrals',
             data: [12, 19, 8, 15, 22, 9, 14],
-            borderColor: '#3b82f6',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            borderColor: '#2b4968',
+            backgroundColor: 'rgba(43, 73, 104, 0.1)',
             fill: true,
             tension: 0.4,
         },
@@ -356,8 +356,8 @@ export const referralVolumeData = {
         {
             label: 'Referrals',
             data: [145, 189, 210, 178, 230, 195],
-            borderColor: '#3b82f6',
-            backgroundColor: 'rgba(59, 130, 246, 0.15)',
+            borderColor: '#2b4968',
+            backgroundColor: 'rgba(43, 73, 104, 0.15)',
             fill: true,
             tension: 0.4,
         },
@@ -373,7 +373,7 @@ export const topReasonsData = {
             backgroundColor: [
                 '#ef4444',
                 '#f59e0b',
-                '#3b82f6',
+                '#2b4968',
                 '#10b981',
                 '#8b5cf6',
             ],
