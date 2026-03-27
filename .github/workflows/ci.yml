@@ -9,10 +9,27 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    
+    # This tells GitHub to run all commands inside your subfolder
+    defaults:
+      run:
+        working-directory: ./trms-frontend
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
-      - run: npm install
-      - run: npm test -- --watchAll=false
+          # This helps speed up subsequent runs
+          cache: 'npm'
+          cache-dependency-path: './trms-frontend/package-lock.json'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        # The --watchAll=false flag ensures the CI finishes and doesn't hang
+        run: npm test -- --watchAll=false
