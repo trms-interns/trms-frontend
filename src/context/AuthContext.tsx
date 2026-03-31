@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, type ReactNode } from 'react'
+import type { UserRole } from '../data/mockData'
 
 interface AuthUser {
     name: string
     email: string
-    role: string
+    role: UserRole
     facility: string
+    department: string
 }
 
 interface AuthContextType {
@@ -14,19 +16,32 @@ interface AuthContextType {
     logout: () => void
 }
 
-// Mock authorized users
+// TODO (Backend Team): Replace with Keycloak OIDC token exchange.
+// POST /api/auth/login → returns JWT with role claims. Store token in memory (not localStorage) for security.
 const MOCK_USERS: Record<string, { password: string; user: AuthUser }> = {
-    'admin@trms.et': {
-        password: 'trms2026',
-        user: { name: 'Dr. Hagos Gebremichael', email: 'admin@trms.et', role: 'Health Administrator', facility: 'Ayder Referral Hospital' },
-    },
     'liaison@trms.et': {
         password: 'trms2026',
-        user: { name: 'Ato Gebre Tesfay', email: 'liaison@trms.et', role: 'Liaison Officer', facility: 'Ayder Referral Hospital' },
+        user: { name: 'Ato Gebre Tesfay', email: 'liaison@trms.et', role: 'Liaison Officer', facility: 'Ayder Referral Hospital', department: 'Liaison Office' },
     },
     'nurse@trms.et': {
         password: 'trms2026',
-        user: { name: 'Sr. Yordanos Tekle', email: 'nurse@trms.et', role: 'Senior Nurse', facility: 'Ayder Referral Hospital' },
+        user: { name: 'Sr. Yordanos Tekle', email: 'nurse@trms.et', role: 'Liaison Officer', facility: 'Ayder Referral Hospital', department: 'Emergency' },
+    },
+    'doctor@trms.et': {
+        password: 'trms2026',
+        user: { name: 'Dr. Amanuel Hailu', email: 'doctor@trms.et', role: 'Doctor', facility: 'Ayder Referral Hospital', department: 'Internal Medicine' },
+    },
+    'dept_head@trms.et': {
+        password: 'trms2026',
+        user: { name: 'Dr. Mekdes Tesfaye', email: 'dept_head@trms.et', role: 'Department Head', facility: 'Ayder Referral Hospital', department: 'Obstetrics/Gynecology' },
+    },
+    'facility_admin@trms.et': {
+        password: 'trms2026',
+        user: { name: 'Ato Kibrom Hailu', email: 'facility_admin@trms.et', role: 'Facility Administrator', facility: 'Ayder Referral Hospital', department: 'Administration' },
+    },
+    'sys_admin@trms.et': {
+        password: 'trms2026',
+        user: { name: 'Dr. Hagos Gebremichael', email: 'sys_admin@trms.et', role: 'System Administrator', facility: 'Regional Health Bureau', department: 'IT Administration' },
     },
 }
 
@@ -44,9 +59,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     const login = (email: string, password: string): boolean => {
-        // TODO (Backend Team): Replace mock authentication with an actual API call.
-        // E.g. POST /api/auth/login with { email, password }
-        // On success, set the user token in localStorage and update state.
+        // TODO (Backend Team): Replace with real API call:
+        // const res = await fetch('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+        // const { token, user } = await res.json()
+        // Store token in memory; decode role from JWT claims.
         const match = MOCK_USERS[email.toLowerCase()]
         if (match && match.password === password) {
             setUser(match.user)
@@ -59,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const logout = () => {
         setUser(null)
         localStorage.removeItem('trms-user')
+        // TODO (Backend Team): POST /api/auth/logout to invalidate token server-side
     }
 
     return (

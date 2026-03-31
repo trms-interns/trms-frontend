@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { Routes, Route, NavLink, useLocation } from "react-router-dom";
+import { Routes, Route, NavLink, useLocation, Navigate } from "react-router-dom";
 import { useTheme } from "./context/ThemeContext";
 import { useLanguage } from "./context/LanguageContext";
 import { useAuth } from "./context/AuthContext";
+import type { UserRole } from "./data/mockData";
 import {
   IconLayoutDashboard,
   IconBuilding,
@@ -16,6 +17,14 @@ import {
   IconBell,
   IconChevronRight,
   IconLogout,
+  IconSend,
+  IconList,
+  IconStethoscope,
+  IconUsers,
+  IconServer,
+  IconShield,
+  IconSettings,
+  IconUser,
 } from "@tabler/icons-react";
 
 // Pages
@@ -24,14 +33,83 @@ import Dashboard from "./features/dashboard/Dashboard";
 import Directory from "./features/directory/Directory";
 import Triage from "./features/triage/Triage";
 import Analytics from "./features/analytics/Analytics";
+import CreateReferral from "./features/referrals/CreateReferral";
+import MyReferrals from "./features/referrals/MyReferrals";
+import DoctorDashboard from "./features/doctor/DoctorDashboard";
+import DeptHeadDashboard from "./features/dept-head/DeptHeadDashboard";
+import FacilityAdminDashboard from "./features/facility-admin/FacilityAdminDashboard";
+import SysAdminDashboard from "./features/sys-admin/SysAdminDashboard";
+import Profile from "./features/profile/Profile";
 
-// Nav order: Triage → Directory → Dashboard → Analytics
-const navItems = [
-  { path: "/", icon: IconClipboardList, labelKey: "nav.triage" },
-  { path: "/directory", icon: IconBuilding, labelKey: "nav.directory" },
-  { path: "/dashboard", icon: IconLayoutDashboard, labelKey: "nav.dashboard" },
-  { path: "/analytics", icon: IconChartBar, labelKey: "nav.analytics" },
-];
+// ─── Role-based navigation definitions ──────────────────────────────────────
+
+interface NavItem {
+  path: string;
+  icon: typeof IconLayoutDashboard;
+  labelKey: string;
+}
+
+const roleNavMap: Record<UserRole, NavItem[]> = {
+  "Liaison Officer": [
+    { path: "/", icon: IconClipboardList, labelKey: "nav.triage" },
+    { path: "/referrals/new", icon: IconSend, labelKey: "nav.sendReferral" },
+    { path: "/referrals/my", icon: IconList, labelKey: "nav.myReferrals" },
+    { path: "/directory", icon: IconBuilding, labelKey: "nav.directory" },
+    { path: "/dashboard", icon: IconLayoutDashboard, labelKey: "nav.dashboard" },
+    { path: "/analytics", icon: IconChartBar, labelKey: "nav.analytics" },
+  ],
+  Doctor: [
+    { path: "/", icon: IconStethoscope, labelKey: "nav.patientQueue" },
+    { path: "/referrals/new", icon: IconSend, labelKey: "nav.sendReferral" },
+    { path: "/referrals/my", icon: IconList, labelKey: "nav.myReferrals" },
+    { path: "/directory", icon: IconBuilding, labelKey: "nav.directory" },
+    { path: "/dashboard", icon: IconLayoutDashboard, labelKey: "nav.dashboard" },
+  ],
+  "Department Head": [
+    { path: "/", icon: IconUsers, labelKey: "nav.userManagement" },
+    { path: "/referrals/my", icon: IconList, labelKey: "nav.referralOverview" },
+    { path: "/directory", icon: IconBuilding, labelKey: "nav.directory" },
+    { path: "/dashboard", icon: IconLayoutDashboard, labelKey: "nav.dashboard" },
+  ],
+  "Facility Administrator": [
+    { path: "/", icon: IconSettings, labelKey: "nav.departments" },
+    { path: "/directory", icon: IconBuilding, labelKey: "nav.serviceStatus" },
+    { path: "/analytics", icon: IconChartBar, labelKey: "nav.reports" },
+    { path: "/dashboard", icon: IconLayoutDashboard, labelKey: "nav.dashboard" },
+  ],
+  "System Administrator": [
+    { path: "/", icon: IconServer, labelKey: "nav.facilityManagement" },
+    { path: "/analytics", icon: IconChartBar, labelKey: "nav.reports" },
+    { path: "/dashboard", icon: IconLayoutDashboard, labelKey: "nav.dashboard" },
+  ],
+  HEW: [
+    { path: "/referrals/new", icon: IconSend, labelKey: "nav.sendReferral" },
+    { path: "/referrals/my", icon: IconList, labelKey: "nav.myReferrals" },
+    { path: "/directory", icon: IconBuilding, labelKey: "nav.directory" },
+    { path: "/dashboard", icon: IconLayoutDashboard, labelKey: "nav.dashboard" },
+  ],
+};
+
+// ─── Role-based home page component ─────────────────────────────────────────
+
+function RoleHomePage({ role }: { role: UserRole }) {
+  switch (role) {
+    case "Liaison Officer":
+      return <Triage />;
+    case "Doctor":
+      return <DoctorDashboard />;
+    case "Department Head":
+      return <DeptHeadDashboard />;
+    case "Facility Administrator":
+      return <FacilityAdminDashboard />;
+    case "System Administrator":
+      return <SysAdminDashboard />;
+    case "HEW":
+      return <CreateReferral />;
+    default:
+      return <Dashboard />;
+  }
+}
 
 export default function App() {
   const { isDark, toggle } = useTheme();
@@ -43,6 +121,9 @@ export default function App() {
 
   // Gate: show login if not authenticated
   if (!isAuthenticated) return <Login />;
+
+  const userRole = (user?.role || "Liaison Officer") as UserRole;
+  const navItems = roleNavMap[userRole] || roleNavMap["Liaison Officer"];
 
   return (
     <div
@@ -91,6 +172,13 @@ export default function App() {
           </div>
         </div>
 
+        {/* Role badge */}
+        {!sidebarCollapsed && (
+          <div className={`px-4 py-2 border-b ${isDark ? 'border-surface-800' : 'border-surface-200'}`}>
+            <p className={`text-[10px] font-semibold uppercase tracking-widest ${isDark ? 'text-surface-500' : 'text-surface-400'}`}>{userRole}</p>
+          </div>
+        )}
+
         {/* Nav links */}
         <nav
           className={`flex-1 py-4 px-3 space-y-1 overflow-y-auto ${sidebarCollapsed ? "px-2" : ""}`}
@@ -132,6 +220,27 @@ export default function App() {
               </NavLink>
             );
           })}
+
+          {/* Profile link — visible to all */}
+          <NavLink
+            to="/profile"
+            onClick={() => setSidebarOpen(false)}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group ${sidebarCollapsed ? "justify-center px-2" : ""} ${
+              location.pathname === "/profile"
+                ? "bg-primary-500/10 text-primary-600 shadow-sm dark:bg-[#2b4968]/25 dark:text-[#2b4968]"
+                : "text-surface-600 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800/70 hover:text-surface-900 dark:hover:text-surface-200"
+            }`}
+          >
+            <IconUser
+              size={25}
+              className={`shrink-0 ${
+                location.pathname === "/profile"
+                  ? "text-primary-600 dark:text-[#2b4968]"
+                  : "text-surface-400 group-hover:text-surface-600 dark:group-hover:text-surface-300"
+              }`}
+            />
+            {!sidebarCollapsed && <span className="whitespace-nowrap">{t("nav.profile")}</span>}
+          </NavLink>
         </nav>
 
         {/* Bottom controls */}
@@ -214,10 +323,21 @@ export default function App() {
         {/* Page content */}
         <div className="flex-1 p-4 lg:p-6">
           <Routes>
-            <Route path="/" element={<Triage />} />
-            <Route path="/directory" element={<Directory />} />
+            {/* Home — role-dependent */}
+            <Route path="/" element={<RoleHomePage role={userRole} />} />
+
+            {/* Shared routes */}
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/directory" element={<Directory />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/profile" element={<Profile />} />
+
+            {/* Referral routes */}
+            <Route path="/referrals/new" element={<CreateReferral />} />
+            <Route path="/referrals/my" element={<MyReferrals />} />
+
+            {/* Catch-all */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
       </main>
