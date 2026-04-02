@@ -2,29 +2,30 @@ import React, { useState } from 'react'
 import { useLanguage } from '../../context/LanguageContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useAuth } from '../../context/AuthContext'
-import { mockReferrals, mockDischargeSummaries } from '../../data/mockData'
+import { useReferrals } from '../../context/ReferralContext'
 import StatusBadge from '../../components/StatusBadge'
 import {
     IconClipboardList,
-    IconSearch,
     IconFileText,
+    IconHash,
 } from '@tabler/icons-react'
 
 export default function MyReferrals() {
     const { t } = useLanguage()
     const { isDark } = useTheme()
     const { user } = useAuth()
+    const { referrals, dischargeSummaries } = useReferrals()
     const [filter, setFilter] = useState<string>('all')
     const [selected, setSelected] = useState<string | null>(null)
 
     // TODO (Backend Team): GET /api/referrals?createdBy={userId}&status={filter}
-    const myRefs = mockReferrals.filter(r => {
+    const myRefs = referrals.filter(r => {
         if (filter !== 'all' && r.status !== filter) return false
         return true
     })
 
-    const selectedRef = mockReferrals.find(r => r.id === selected)
-    const selectedDS = selectedRef ? mockDischargeSummaries.find(ds => ds.referralId === selectedRef.id) : null
+    const selectedRef = referrals.find(r => r.id === selected)
+    const selectedDS = selectedRef ? dischargeSummaries.find(ds => ds.referralId === selectedRef.id) : null
 
     const card = `rounded-2xl border p-5 ${isDark ? 'bg-surface-900 border-surface-800' : 'bg-white border-surface-200'}`
     const filterCls = (v: string) => `px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${filter === v
@@ -70,6 +71,9 @@ export default function MyReferrals() {
                                             <span className="text-sm font-semibold truncate pr-2">{ref.patientName}</span>
                                             <StatusBadge type="priority" value={ref.priority} />
                                         </div>
+                                        <p className={`text-[10px] font-semibold uppercase tracking-wide ${isDark ? 'text-surface-500' : 'text-surface-400'}`}>
+                                            Referral ID: {ref.id}
+                                        </p>
                                         <p className={`text-xs truncate ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>{ref.chiefComplaint}</p>
                                         <div className="flex items-center gap-2 mt-1.5">
                                             <StatusBadge type="sync" value={ref.status} />
@@ -94,6 +98,14 @@ export default function MyReferrals() {
                                 <div className="flex gap-2">
                                     <StatusBadge type="priority" value={selectedRef.priority} />
                                     <StatusBadge type="sync" value={selectedRef.status} />
+                                </div>
+                            </div>
+
+                            <div className={`mb-5 flex items-center gap-2 rounded-xl border px-4 py-3 ${isDark ? 'border-primary-500/20 bg-primary-500/10' : 'border-primary-200 bg-primary-50'}`}>
+                                <IconHash size={16} className="text-primary-500" />
+                                <div>
+                                    <p className={`text-[10px] font-semibold uppercase tracking-wide ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>Referral ID</p>
+                                    <p className="text-base font-bold tracking-wide">{selectedRef.id}</p>
                                 </div>
                             </div>
 
