@@ -14,7 +14,7 @@ export default function Login() {
     const { login } = useAuth()
     const { isDark } = useTheme()
 
-    const [email, setEmail] = useState('')
+    const [username, setUsername] = useState('')
     const [password, setPassword] = useState('')
     const [showPassword, setShowPassword] = useState(false)
     const [error, setError] = useState('')
@@ -22,17 +22,17 @@ export default function Login() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        if (!email || !password) {
-            setError('Please enter your email and password.')
+        if (!username || !password) {
+            setError('Please enter your username and password.')
             return
         }
         setLoading(true)
         setError('')
         // Simulate tiny async delay for UX
         await new Promise(r => setTimeout(r, 600))
-        const ok = login(email.trim(), password)
+        const ok = await login(username.trim(), password)
         if (!ok) {
-            setError('Invalid credentials. Please check your email and password.')
+            setError('Invalid credentials. Please check your username and password.')
         }
         setLoading(false)
     }
@@ -113,19 +113,19 @@ export default function Login() {
                             </div>
 
                             <form onSubmit={handleSubmit} className="space-y-4">
-                        {/* Email */}
+                        {/* Username */}
                         <div>
                             <label className={`block text-xs font-semibold mb-1.5 ${isDark ? 'text-surface-400' : 'text-surface-600'}`}>
-                                Email Address
+                                Username
                             </label>
                             <div className="relative">
                                 <IconMail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
                                 <input
-                                    type="email"
-                                    autoComplete="email"
-                                    placeholder="you@trms.et"
-                                    value={email}
-                                    onChange={e => { setEmail(e.target.value); setError('') }}
+                                    type="text"
+                                    autoComplete="username"
+                                    placeholder="liaison"
+                                    value={username}
+                                    onChange={e => { setUsername(e.target.value); setError('') }}
                                     className={inputClass}
                                 />
                             </div>
@@ -186,8 +186,8 @@ export default function Login() {
                             <div className={`mt-6 p-3 rounded-lg text-[11px] leading-relaxed border ${isDark ? 'border-surface-800 bg-surface-950/40 text-surface-500' : 'border-surface-200 bg-surface-50 text-surface-500'}`}>
                                 <strong className={isDark ? 'text-surface-400' : 'text-surface-600'}>Demo credentials </strong>
                                 <span className="font-medium">(password: <span className="font-mono">trms2026</span>)</span>
-                                <br />liaison@trms.et · doctor@trms.et · dept_head@trms.et
-                                <br />facility_admin@trms.et · sys_admin@trms.et · nurse@trms.et
+                                <br />liaison · doctor · dept_head
+                                <br />facility_admin · sys_admin · nurse · hew
                             </div>
                         </div>
                     </div>
