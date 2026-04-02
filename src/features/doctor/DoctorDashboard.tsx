@@ -1,30 +1,75 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useLanguage } from '../../context/LanguageContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useAuth } from '../../context/AuthContext'
-import { mockReferrals, mockDischargeSummaries } from '../../data/mockData'
+import { useReferrals } from '../../context/ReferralContext'
 import StatusBadge from '../../components/StatusBadge'
 import {
     IconStethoscope,
     IconClipboardCheck,
     IconUser,
     IconAlertTriangle,
+    IconSend,
+    IconX,
 } from '@tabler/icons-react'
 
 export default function DoctorDashboard() {
     const { t } = useLanguage()
     const { isDark } = useTheme()
     const { user } = useAuth()
+    const { referrals, dischargeSummaries, completeReferral } = useReferrals()
+    const [activeReferralId, setActiveReferralId] = useState<string | null>(null)
+    const [finalDiagnosis, setFinalDiagnosis] = useState('')
+    const [treatmentSummary, setTreatmentSummary] = useState('')
+    const [medicationsPrescribed, setMedicationsPrescribed] = useState('')
+    const [followUpInstructions, setFollowUpInstructions] = useState('')
+    const [dischargeDate, setDischargeDate] = useState(new Date().toISOString().slice(0, 10))
 
     // Filter referrals to doctor's department (accepted referrals needing attention)
-    const deptReferrals = mockReferrals.filter(
+    const deptReferrals = referrals.filter(
         r => r.department === user?.department && ['accepted', 'synced', 'pending'].includes(r.status)
     )
-    const completedReferrals = mockReferrals.filter(
+    const completedReferrals = referrals.filter(
         r => r.department === user?.department && r.status === 'completed'
     )
 
     const card = `rounded-2xl border p-5 ${isDark ? 'bg-surface-900 border-surface-800' : 'bg-white border-surface-200'}`
+    const inputCls = `w-full px-3 py-2.5 rounded-lg text-sm border outline-none transition-colors ${isDark ? 'bg-surface-950 border-surface-800 text-surface-100 placeholder-surface-500 focus:border-primary-400' : 'bg-surface-50 border-surface-200 text-surface-900 placeholder-surface-400 focus:border-primary-500'}`
+    const textareaCls = `${inputCls} resize-none leading-relaxed`
+    const activeReferral = deptReferrals.find(ref => ref.id === activeReferralId) || null
+
+    const openCompletionModal = (referralId: string) => {
+        setActiveReferralId(referralId)
+        setFinalDiagnosis('')
+        setTreatmentSummary('')
+        setMedicationsPrescribed('')
+        setFollowUpInstructions('')
+        setDischargeDate(new Date().toISOString().slice(0, 10))
+    }
+
+    const closeCompletionModal = () => {
+        setActiveReferralId(null)
+        setFinalDiagnosis('')
+        setTreatmentSummary('')
+        setMedicationsPrescribed('')
+        setFollowUpInstructions('')
+        setDischargeDate(new Date().toISOString().slice(0, 10))
+    }
+
+    const submitCompletion = () => {
+        if (!activeReferralId || !finalDiagnosis.trim() || !treatmentSummary.trim() || !medicationsPrescribed.trim() || !followUpInstructions.trim() || !dischargeDate) return
+        completeReferral({
+            referralId: activeReferralId,
+            finalDiagnosis: finalDiagnosis.trim(),
+            treatmentSummary: treatmentSummary.trim(),
+            medicationsPrescribed: medicationsPrescribed.trim(),
+            followUpInstructions: followUpInstructions.trim(),
+            dischargeDate,
+            createdByUserId: user?.id || 'USR-UNKNOWN',
+            createdByName: user?.name || 'Assigned Doctor',
+        })
+        closeCompletionModal()
+    }
 
     return (
         <div className="space-y-6 animate-fade-in">
@@ -73,7 +118,7 @@ export default function DoctorDashboard() {
                                 <StatusBadge type="sync" value={ref.status} />
                                 {ref.status === 'accepted' && (
                                     <button
-                                        onClick={() => alert('TODO: Open discharge summary form for ' + ref.id)}
+                                        onClick={() => openCompletionModal(ref.id)}
                                         className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${isDark ? 'bg-primary-500/15 text-primary-300 hover:bg-primary-500/25' : 'bg-primary-100 text-primary-700 hover:bg-primary-200'}`}
                                     >
                                         {t('doc.dischargeSummary')}
@@ -93,7 +138,7 @@ export default function DoctorDashboard() {
                 ) : (
                     <div className="space-y-2">
                         {completedReferrals.map(ref => {
-                            const ds = mockDischargeSummaries.find(d => d.referralId === ref.id)
+                            const ds = dischargeSummaries.find(d => d.referralId === ref.id)
                             return (
                                 <div key={ref.id} className={`flex items-center gap-3 p-3 rounded-xl ${isDark ? 'bg-surface-950' : 'bg-surface-50'}`}>
                                     <div className="w-8 h-8 rounded-full bg-emerald-500/15 text-emerald-500 flex items-center justify-center shrink-0">
@@ -112,6 +157,64 @@ export default function DoctorDashboard() {
                     </div>
                 )}
             </div>
+
+            {activeReferral && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className={`w-full max-w-2xl rounded-2xl shadow-2xl border ${isDark ? 'bg-surface-900 border-surface-800' : 'bg-white border-surface-200'}`}>
+                        <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? 'border-surface-800' : 'border-surface-200'}`}>
+                            <div>
+                                <h3 className="text-base font-bold">{t('doc.dischargeSummary')}</h3>
+                                <p className={`text-xs mt-0.5 ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>
+                                    {activeReferral.patientName} · {activeReferral.id}
+                                </p>
+                            </div>
+                            <button
+                                onClick={closeCompletionModal}
+                                className={`p-1.5 rounded-lg ${isDark ? 'text-surface-400 hover:bg-surface-800' : 'text-surface-500 hover:bg-surface-100'}`}
+                            >
+                                <IconX size={16} />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div>
+                                <label className="text-xs font-semibold text-surface-400 mb-1.5 block uppercase tracking-wide">Final Diagnosis</label>
+                                <textarea className={textareaCls} rows={2} value={finalDiagnosis} onChange={(e) => setFinalDiagnosis(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="text-xs font-semibold text-surface-400 mb-1.5 block uppercase tracking-wide">Summary of Treatment</label>
+                                <textarea className={textareaCls} rows={3} value={treatmentSummary} onChange={(e) => setTreatmentSummary(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="text-xs font-semibold text-surface-400 mb-1.5 block uppercase tracking-wide">Medications Prescribed</label>
+                                <textarea className={textareaCls} rows={3} value={medicationsPrescribed} onChange={(e) => setMedicationsPrescribed(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="text-xs font-semibold text-surface-400 mb-1.5 block uppercase tracking-wide">Follow-Up Instructions</label>
+                                <textarea className={textareaCls} rows={3} value={followUpInstructions} onChange={(e) => setFollowUpInstructions(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="text-xs font-semibold text-surface-400 mb-1.5 block uppercase tracking-wide">Discharge Date</label>
+                                <input type="date" className={inputCls} value={dischargeDate} onChange={(e) => setDischargeDate(e.target.value)} />
+                            </div>
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    onClick={submitCompletion}
+                                    disabled={!finalDiagnosis.trim() || !treatmentSummary.trim() || !medicationsPrescribed.trim() || !followUpInstructions.trim() || !dischargeDate}
+                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-primary-800 transition-colors"
+                                >
+                                    <IconSend size={14} /> {t('tri.submitReport')}
+                                </button>
+                                <button
+                                    onClick={closeCompletionModal}
+                                    className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-700 text-surface-300' : 'border-surface-300 text-surface-700'}`}
+                                >
+                                    {t('common.cancel')}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
