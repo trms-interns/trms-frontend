@@ -40,6 +40,7 @@ import DeptHeadDashboard from "./features/dept-head/DeptHeadDashboard";
 import FacilityAdminDashboard from "./features/facility-admin/FacilityAdminDashboard";
 import SysAdminDashboard from "./features/sys-admin/SysAdminDashboard";
 import Profile from "./features/profile/Profile";
+import { getUserInitials } from "./lib/trmsApi";
 
 // ─── Role-based navigation definitions ──────────────────────────────────────
 
@@ -275,12 +276,7 @@ export default function App() {
             className={`flex items-center gap-3 p-2.5 rounded-xl ${isDark ? "bg-surface-800/50" : "bg-surface-100"} ${sidebarCollapsed ? "justify-center" : ""}`}
           >
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-500 to-primary-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
-              {user?.name
-                .split(" ")
-                .filter((w) => !["Dr.", "Sr.", "Ato"].includes(w))
-                .map((w) => w[0])
-                .join("")
-                .slice(0, 2)}
+              {user?.name ? getUserInitials(user.name) : "TR"}
             </div>
             <div
               className={`flex-1 min-w-0 whitespace-nowrap ${sidebarCollapsed ? "hidden" : ""}`}

@@ -1,0 +1,1186 @@
+openapi: 3.0.0
+info:
+  title: TRMS API
+  description: |
+    Tigray Resilient Referral System (TRMS) API.
+    All endpoints require Bearer authentication (JWT) except `/auth/login`.
+  version: 1.0.0
+servers:
+  - url: /api/v1
+    description: Main API version 1
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+
+    ErrorResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+        message:
+          type: string
+        error:
+          type: string
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    PasswordChangeRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        profileImageUrl:
+          type: string
+          format: uri
+        location:
+          type: string
+        birthDate:
+          type: string
+          format: date
+        specialityDescription:
+          type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        fullName:
+          type: string
+        role:
+          type: string
+          enum: [system_admin, facility_admin, department_head, liaison_officer, doctor, hew]
+        departmentId:
+          type: string
+          format: uuid
+          nullable: true
+        facilityId:
+          type: string
+          format: uuid
+        active:
+          type: boolean
+        lastLogin:
+          type: string
+          format: date-time
+        phone:
+          type: string
+        email:
+          type: string
+        profileImageUrl:
+          type: string
+        location:
+          type: string
+        birthDate:
+          type: string
+          format: date
+        specialityDescription:
+          type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            username:
+              type: string
+            fullName:
+              type: string
+            role:
+              type: string
+              enum: [system_admin, facility_admin, department_head, liaison_officer, doctor, hew]
+            facilityId:
+              type: string
+              format: uuid
+            departmentId:
+              type: string
+              format: uuid
+              nullable: true
+
+    CreateUserRequest:
+      type: object
+      required: [fullName, role, departmentId, facilityId, initialPassword]
+      properties:
+        fullName:
+          type: string
+        role:
+          type: string
+          enum: [system_admin, facility_admin, department_head, liaison_officer, doctor, hew]
+        departmentId:
+          type: string
+          format: uuid
+        facilityId:
+          type: string
+          format: uuid
+        initialPassword:
+          type: string
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+        role:
+          type: string
+          enum: [system_admin, facility_admin, department_head, liaison_officer, doctor, hew]
+        departmentId:
+          type: string
+          format: uuid
+        active:
+          type: boolean
+
+    Department:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        facilityId:
+          type: string
+          format: uuid
+
+    CreateDepartmentRequest:
+      type: object
+      required: [name, facilityId]
+      properties:
+        name:
+          type: string
+        facilityId:
+          type: string
+          format: uuid
+
+    UpdateDepartmentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+
+    Service:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        serviceType:
+          type: string
+        status:
+          type: string
+          enum: [available, limited, unavailable]
+        estimatedDelayDays:
+          type: integer
+          minimum: 0
+
+    Facility:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+          enum: [health_center, primary_hospital, general_hospital, specialized_hospital]
+        location:
+          type: string
+        contact:
+          type: string
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+
+    CreateFacilityRequest:
+      type: object
+      required: [name, type, adminUsername, adminPassword]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [health_center, primary_hospital, general_hospital, specialized_hospital]
+        location:
+          type: string
+        contact:
+          type: string
+        adminUsername:
+          type: string
+        adminPassword:
+          type: string
+
+    UpdateFacilityRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        location:
+          type: string
+        contact:
+          type: string
+
+    UpdateServiceRequest:
+      type: object
+      required: [serviceId, status]
+      properties:
+        serviceId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [available, limited, unavailable]
+        estimatedDelayDays:
+          type: integer
+          minimum: 0
+
+    ReportQueryRequest:
+      type: object
+      required: [month]
+      properties:
+        facilityId:
+          type: string
+          format: uuid
+        month:
+          type: string
+          example: '2026-04'
+
+    ExportReportQueryRequest:
+      allOf:
+        - $ref: '#/components/schemas/ReportQueryRequest'
+        - type: object
+          properties:
+            format:
+              type: string
+              enum: [csv]
+
+    CreateReferralRequest:
+      type: object
+      required:
+        - patientName
+        - patientDob
+        - receivingFacilityId
+        - priority
+        - clinicalSummary
+        - primaryDiagnosis
+        - reason
+        - consentGiven
+      properties:
+        patientName:
+          type: string
+        patientDob:
+          type: string
+          format: date
+        patientGender:
+          type: string
+          enum: [male, female, other, unknown]
+        patientPhone:
+          type: string
+        receivingFacilityId:
+          type: string
+          format: uuid
+        priority:
+          type: string
+          enum: [routine, urgent, emergency]
+        clinicalSummary:
+          type: string
+        primaryDiagnosis:
+          type: string
+        treatmentGiven:
+          type: string
+        reason:
+          type: string
+        consentGiven:
+          type: boolean
+        allergies:
+          type: string
+        pastMedicalHistory:
+          type: string
+        currentMedications:
+          type: string
+
+    Referral:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        patient:
+          type: object
+        referringFacilityId:
+          type: string
+          format: uuid
+        referringUserId:
+          type: string
+          format: uuid
+        receivingFacilityId:
+          type: string
+          format: uuid
+        priority:
+          type: string
+          enum: [routine, urgent, emergency]
+        clinicalSummary:
+          type: string
+        primaryDiagnosis:
+          type: string
+        treatmentGiven:
+          type: string
+        reasonForReferral:
+          type: string
+        allergies:
+          type: string
+        pastMedicalHistory:
+          type: string
+        currentMedications:
+          type: string
+        status:
+          type: string
+          enum: [draft, pending, accepted, rejected, forwarded, completed]
+        createdAt:
+          type: string
+          format: date-time
+        syncedAt:
+          type: string
+          format: date-time
+          nullable: true
+        waitingTime:
+          type: string
+        rejectionReason:
+          type: string
+        acceptedAt:
+          type: string
+          format: date-time
+        forwardingNote:
+          type: string
+        forwardedFromReferralId:
+          type: string
+          format: uuid
+        appointmentDate:
+          type: string
+          format: date-time
+        consentRecord:
+          type: object
+        dischargeSummary:
+          $ref: '#/components/schemas/DischargeSummary'
+
+    AcceptReferralRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ACCEPTED]
+        waitingTime:
+          type: string
+        note:
+          type: string
+
+    RejectReferralRequest:
+      type: object
+      required: [status, reason]
+      properties:
+        status:
+          type: string
+          enum: [REJECTED]
+        reason:
+          type: string
+
+    ForwardReferralRequest:
+      type: object
+      required: [status, newReceivingFacilityId, forwardingNote]
+      properties:
+        status:
+          type: string
+          enum: [FORWARDED]
+        newReceivingFacilityId:
+          type: string
+          format: uuid
+        forwardingNote:
+          type: string
+
+    UpdateReferralRequest:
+      oneOf:
+        - $ref: '#/components/schemas/AcceptReferralRequest'
+        - $ref: '#/components/schemas/RejectReferralRequest'
+        - $ref: '#/components/schemas/ForwardReferralRequest'
+
+    DischargeSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        referralId:
+          type: string
+          format: uuid
+        summaryText:
+          type: string
+        finalDiagnosis:
+          type: string
+        medicationsPrescribed:
+          type: string
+        followUpInstructions:
+          type: string
+        createdByUserId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        dischargeDate:
+          type: string
+          format: date
+
+    CreateDischargeSummaryRequest:
+      type: object
+      required: [summary, finalDiagnosis, medicationsPrescribed, followUpInstructions, dischargeDate]
+      properties:
+        summary:
+          type: string
+        finalDiagnosis:
+          type: string
+        medicationsPrescribed:
+          type: string
+        followUpInstructions:
+          type: string
+        dischargeDate:
+          type: string
+          format: date
+
+    SyncUpdatesResponse:
+      type: object
+      properties:
+        referrals:
+          type: array
+          items:
+            $ref: '#/components/schemas/Referral'
+        facilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Facility'
+
+    ReportResponse:
+      type: object
+      properties:
+        facilityName:
+          type: string
+        period:
+          type: string
+        sent:
+          type: integer
+        received:
+          type: integer
+        accepted:
+          type: integer
+        rejected:
+          type: integer
+        forwarded:
+          type: integer
+        completed:
+          type: integer
+
+    AuditLogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        action:
+          type: string
+        targetId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        ipAddress:
+          type: string
+
+    NotificationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        message:
+          type: string
+        type:
+          type: string
+          enum: [NEW_REFERRAL, REFERRAL_ACCEPTED, REFERRAL_REJECTED, REFERRAL_FORWARDED, SYSTEM_ALERT]
+        targetId:
+          type: string
+          format: uuid
+        isRead:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+paths:
+  /auth/login:
+    post:
+      summary: Authenticate user and get JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/me:
+    get:
+      summary: Get current user profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+
+  /auth/me/profile:
+    patch:
+      summary: Update my personal profile fields
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Updated user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+
+  /auth/me/password:
+    patch:
+      summary: Change own password
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+      responses:
+        '200':
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+
+  /auth/logout:
+    post:
+      summary: Logout current user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          description: Unauthorized
+
+  /users:
+    get:
+      summary: List users
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: facilityId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+    post:
+      summary: Create a new user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '403':
+          description: Not authorized
+
+  /users/{id}:
+    patch:
+      summary: Update user details or toggle status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          description: User not found
+
+  /departments:
+    get:
+      summary: List departments
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: facilityId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of departments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Department'
+    post:
+      summary: Create a new department
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDepartmentRequest'
+      responses:
+        '201':
+          description: Department created
+
+  /departments/{id}:
+    patch:
+      summary: Update department details
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDepartmentRequest'
+      responses:
+        '200':
+          description: Department updated
+
+  /facilities:
+    get:
+      summary: List all facilities with their services
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of facilities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Facility'
+    post:
+      summary: Create a facility and initial facility admin
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFacilityRequest'
+      responses:
+        '201':
+          description: Facility created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Facility'
+        '403':
+          description: Not authorized
+
+  /facilities/{id}:
+    patch:
+      summary: Update facility details
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFacilityRequest'
+      responses:
+        '200':
+          description: Facility updated
+        '403':
+          description: Not authorized
+    delete:
+      summary: Delete facility
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Facility deleted
+        '403':
+          description: Not authorized
+
+  /facilities/{facilityId}/services:
+    get:
+      summary: List services for a facility
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: facilityId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of facility services
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Service'
+        '404':
+          description: Facility not found
+    patch:
+      summary: Update service status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: facilityId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateServiceRequest'
+      responses:
+        '200':
+          description: Service updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '404':
+          description: Facility or service not found
+
+  /referrals:
+    get:
+      summary: List referrals
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, pending, accepted, rejected, forwarded, completed]
+        - name: facilityId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: departmentId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of referrals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Referral'
+    post:
+      summary: Create a new referral
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReferralRequest'
+      responses:
+        '201':
+          description: Referral created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Referral'
+
+  /referrals/{id}:
+    get:
+      summary: Get referral details
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Referral details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Referral'
+        '404':
+          description: Referral not found
+    patch:
+      summary: Update referral status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReferralRequest'
+      responses:
+        '200':
+          description: Referral updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Referral'
+        '400':
+          description: Invalid status transition
+
+  /referrals/{id}/discharge:
+    post:
+      summary: Add discharge summary
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDischargeSummaryRequest'
+      responses:
+        '201':
+          description: Discharge summary added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DischargeSummary'
+        '404':
+          description: Referral not found
+
+  /referrals/sync:
+    get:
+      summary: Get updates since a timestamp
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: since
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Updates since given time
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncUpdatesResponse'
+    post:
+      summary: Push unsynced referrals
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Unsynced referrals returned
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Referral'
+
+  /notifications:
+    get:
+      summary: Get notifications for current user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationResponse'
+
+  /notifications/{id}/read:
+    patch:
+      summary: Mark a notification as read
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Notification marked as read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /reports:
+    get:
+      summary: Generate monthly report
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: facilityId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: string
+            example: '2026-04'
+      responses:
+        '200':
+          description: Report data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportResponse'
+        '403':
+          description: Not authorized
+
+  /reports/export:
+    get:
+      summary: Export monthly report as CSV
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: facilityId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: string
+            example: '2026-04'
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [csv]
+      responses:
+        '200':
+          description: CSV report export
+          content:
+            text/csv:
+              schema:
+                type: string
+        '403':
+          description: Not authorized
+
+  /audit-logs:
+    get:
+      summary: View audit logs
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of audit log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditLogEntry'
+        '403':
+          description: Not authorized

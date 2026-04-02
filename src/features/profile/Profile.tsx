@@ -2,7 +2,8 @@ import React from 'react'
 import { useLanguage } from '../../context/LanguageContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useAuth } from '../../context/AuthContext'
-import { IconUser, IconLock } from '@tabler/icons-react'
+import { IconLock } from '@tabler/icons-react'
+import { getUserInitials } from '../../lib/trmsApi'
 
 export default function Profile() {
     const { t } = useLanguage()
@@ -21,12 +22,7 @@ export default function Profile() {
             <div className={card}>
                 <div className="flex items-center gap-4 mb-6">
                     <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-white text-lg font-bold shadow-lg shadow-primary-500/25">
-                        {user?.name
-                            .split(' ')
-                            .filter(w => !['Dr.', 'Sr.', 'Ato'].includes(w))
-                            .map(w => w[0])
-                            .join('')
-                            .slice(0, 2)}
+                        {user?.name ? getUserInitials(user.name) : 'TR'}
                     </div>
                     <div>
                         <p className="text-lg font-bold">{user?.name}</p>
@@ -40,8 +36,8 @@ export default function Profile() {
                         <p className={valueCls}>{user?.name}</p>
                     </div>
                     <div>
-                        <p className={labelCls}>Email</p>
-                        <p className={valueCls}>{user?.email}</p>
+                        <p className={labelCls}>Username</p>
+                        <p className={valueCls}>{user?.username}</p>
                     </div>
                     <div>
                         <p className={labelCls}>{t('common.role')}</p>
