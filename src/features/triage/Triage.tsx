@@ -138,10 +138,10 @@ export default function Triage() {
                 onClick={() => setSelectedRef(r.id)}
                 className={`w-full text-left rounded-lg p-3.5 border transition-all duration-150 hover:-translate-y-0.5
                     ${isSelected
-                        ? isDark ? 'border-primary-500/60 bg-primary-500/10 shadow-md shadow-primary-500/20' : 'border-primary-400 bg-primary-50 shadow-md shadow-primary-500/10'
+                        ? isDark ? 'border-[#2b4968]/60 bg-[#2b4968]/10 shadow-md shadow-[#2b4968]/20' : 'border-[#2b4968] bg-[#2b4968]/10 shadow-md shadow-[#2b4968]/10'
                         : isDark ? 'border-surface-800 bg-surface-950 hover:border-surface-700' : 'border-surface-200 bg-white hover:border-surface-300'
                     }
-                    ${r.priority === 'emergency' ? 'border-l-4 border-l-red-600' : r.priority === 'urgent' ? 'border-l-4 border-l-amber-500' : 'border-l-4 border-l-[#2b4968]'}`}
+                    ${r.priority === 'emergency' ? 'border-l-4 border-l-red-600' : r.priority === 'urgent' ? 'border-l-4 border-l-amber-400' : 'border-l-4 border-l-[#2b4968]'}`}
                 style={{ animationDelay: `${i * 40}ms` }}
             >
                 <div className="flex items-center justify-between mb-1">
@@ -212,9 +212,9 @@ export default function Triage() {
                         <p className={`text-[10px] uppercase font-semibold ${isDark ? 'text-red-300' : 'text-red-600'}`}>Emergency</p>
                         <p className={`text-lg font-bold ${isDark ? 'text-red-200' : 'text-red-700'}`}>{emergency.length}</p>
                     </div>
-                    <div className={`rounded-xl border px-3 py-2 ${isDark ? 'border-amber-900/60 bg-amber-950/40' : 'border-amber-200 bg-amber-50'}`}>
-                        <p className={`text-[10px] uppercase font-semibold ${isDark ? 'text-amber-200' : 'text-amber-700'}`}>Urgent</p>
-                        <p className={`text-lg font-bold ${isDark ? 'text-amber-100' : 'text-amber-800'}`}>{urgent.length}</p>
+                    <div className={`rounded-xl border px-3 py-2 ${isDark ? 'border-amber-400/60 bg-amber-950/40' : 'border-amber-300 bg-amber-50'}`}>
+                        <p className={`text-[10px] uppercase font-semibold ${isDark ? 'text-amber-300' : 'text-amber-600'}`}>Urgent</p>
+                        <p className={`text-lg font-bold ${isDark ? 'text-amber-200' : 'text-amber-700'}`}>{urgent.length}</p>
                     </div>
                     <div className={`rounded-xl border px-3 py-2 ${isDark ? 'border-[#2b4968]/60 bg-[#2b4968]/40' : 'border-[#2b4968]/20 bg-[#2b4968]/10'}`}>
                         <p className={`text-[10px] uppercase font-semibold ${isDark ? 'text-[#2b4968]' : 'text-[#2b4968]'}`}>Routine</p>
@@ -237,7 +237,7 @@ export default function Triage() {
                             </div>
                         </div>
                         <Section label="Emergency" color="text-red-500" dot="bg-red-500" items={emergency} />
-                        <Section label="Urgent" color="text-amber-500" dot="bg-amber-500" items={urgent} />
+                        <Section label="Urgent" color="text-amber-400" dot="bg-amber-400" items={urgent} />
                         <Section label="Routine" color="text-[#2b4968]" dot="bg-[#2b4968]" items={routine} />
                         {triageReferrals.length === 0 && (
                             <div className="text-center py-8">
@@ -255,7 +255,7 @@ export default function Triage() {
                             <div className={cardBase}>
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-3">
-                                        <div className={`w-11 h-11 rounded-lg flex items-center justify-center text-white text-sm font-bold ${selected.priority === 'emergency' ? 'bg-red-600' : selected.priority === 'urgent' ? 'bg-amber-500' : 'bg-[#2b4968]'}`}>
+                                        <div className={`w-11 h-11 rounded-lg flex items-center justify-center text-white text-sm font-bold ${selected.priority === 'emergency' ? 'bg-red-600' : selected.priority === 'urgent' ? 'bg-amber-400' : 'bg-[#2b4968]'}`}>
                                             {selected.patientName.split(' ').map(w => w[0]).join('')}
                                         </div>
                                         <div>
@@ -312,7 +312,7 @@ export default function Triage() {
                             {/* Write Report button for already-accepted patients */}
                             <button
                                 onClick={() => openModal('report', selected.id)}
-                                className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold border transition-all hover:-translate-y-0.5 ${isDark ? 'border-primary-500/40 text-primary-400 hover:bg-primary-500/10' : 'border-primary-300 text-primary-700 hover:bg-primary-50'}`}
+                                className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold border transition-all hover:-translate-y-0.5 ${isDark ? 'border-[#2b4968]/40 text-[#2b4968] hover:bg-[#2b4968]/10' : 'border-[#2b4968]/60 text-[#2b4968] hover:bg-[#2b4968]/10'}`}
                             >
                                 <IconFileText size={15} /> {t('tri.writeReport')}
                             </button>
