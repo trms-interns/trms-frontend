@@ -6,7 +6,9 @@ interface AuthUser {
     username: string
     name: string
     email?: string
+    profileImageUrl?: string
     role: AppUserRole
+    mustChangePassword?: boolean
     facility: string
     department: string
     facilityId?: string
@@ -17,6 +19,7 @@ interface AuthContextType {
     user: AuthUser | null
     isAuthenticated: boolean
     login: (username: string, password: string) => Promise<boolean>
+    refreshCurrentUser: () => Promise<void>
     logout: () => void
 }
 
@@ -57,13 +60,33 @@ const AuthContext = createContext<AuthContextType>({
     user: null,
     isAuthenticated: false,
     login: async () => false,
+    refreshCurrentUser: async () => { },
     logout: () => { },
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<AuthUser | null>(() => {
         const saved = localStorage.getItem('trms-user')
-        return saved ? JSON.parse(saved) : null
+        if (!saved) return null
+        const parsed = JSON.parse(saved) as AuthUser
+        return {
+            ...parsed,
+            mustChangePassword: parsed.mustChangePassword ?? false,
+        }
+    })
+
+    const mapApiUserToAuthUser = (apiUser: any, existingUser?: AuthUser | null): AuthUser => ({
+        id: apiUser.id,
+        username: apiUser.username,
+        name: apiUser.fullName,
+        role: apiRoleToAppRole(apiUser.role),
+        mustChangePassword: apiUser.mustChangePassword ?? false,
+        profileImageUrl: apiUser.profileImageUrl,
+        email: apiUser.email,
+        facility: apiUser.facilityName || existingUser?.facility || apiUser.facilityId || 'Assigned Facility',
+        department: apiUser.departmentName || existingUser?.department || apiUser.departmentId || 'Unassigned Department',
+        facilityId: apiUser.facilityId,
+        departmentId: apiUser.departmentId,
     })
 
     const login = async (username: string, password: string): Promise<boolean> => {
@@ -79,16 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // Store the JWT token
                 trmsApi.setToken(response.access_token)
 
-                const apiUser: AuthUser = {
-                    id: response.user.id,
-                    username: response.user.username,
-                    name: response.user.fullName,
-                    role: apiRoleToAppRole(response.user.role),
-                    facility: response.user.facilityId || 'Assigned Facility',
-                    department: response.user.departmentId || 'Unassigned Department',
-                    facilityId: response.user.facilityId,
-                    departmentId: response.user.departmentId,
-                }
+                const apiUser = mapApiUserToAuthUser(response.user)
 
                 setUser(apiUser)
                 localStorage.setItem('trms-user', JSON.stringify(apiUser))
@@ -107,6 +121,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return false
     }
 
+    const refreshCurrentUser = async () => {
+        if (!ENABLE_API_AUTH || !trmsApi.getToken()) return
+        try {
+            const apiUser = await trmsApi.getCurrentUser()
+            const mappedUser = mapApiUserToAuthUser(apiUser, user)
+            setUser(mappedUser)
+            localStorage.setItem('trms-user', JSON.stringify(mappedUser))
+        } catch {
+            // Keep current session if refresh fails transiently.
+        }
+    }
+
     const logout = () => {
         setUser(null)
         localStorage.removeItem('trms-user')
@@ -114,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     return (
-        <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, logout }}>
+        <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, refreshCurrentUser, logout }}>
             {children}
         </AuthContext.Provider>
     )

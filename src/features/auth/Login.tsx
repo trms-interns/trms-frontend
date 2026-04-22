@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import {
@@ -18,7 +18,16 @@ export default function Login() {
     const [password, setPassword] = useState('')
     const [showPassword, setShowPassword] = useState(false)
     const [error, setError] = useState('')
+    const [notice, setNotice] = useState('')
     const [loading, setLoading] = useState(false)
+
+    useEffect(() => {
+        const nextNotice = localStorage.getItem('trms-auth-notice')
+        if (nextNotice) {
+            setNotice(nextNotice)
+            localStorage.removeItem('trms-auth-notice')
+        }
+    }, [])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -158,6 +167,13 @@ export default function Login() {
                         </div>
 
                         {/* Error */}
+                        {notice && (
+                            <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs animate-fade-in">
+                                <IconShieldCheck size={14} className="shrink-0" />
+                                {notice}
+                            </div>
+                        )}
+
                         {error && (
                             <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs animate-fade-in">
                                 <IconAlertCircle size={14} className="shrink-0" />

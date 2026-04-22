@@ -29,6 +29,7 @@ import {
 
 // Pages
 import Login from "./features/auth/Login";
+import FirstLoginPasswordReset from "./features/auth/FirstLoginPasswordReset";
 import Dashboard from "./features/dashboard/Dashboard";
 import Directory from "./features/directory/Directory";
 import Triage from "./features/triage/Triage";
@@ -122,6 +123,7 @@ export default function App() {
 
   // Gate: show login if not authenticated
   if (!isAuthenticated) return <Login />;
+  if (user?.mustChangePassword) return <FirstLoginPasswordReset />;
 
   const userRole = (user?.role || "Liaison Officer") as UserRole;
   const navItems = roleNavMap[userRole] || roleNavMap["Liaison Officer"];
