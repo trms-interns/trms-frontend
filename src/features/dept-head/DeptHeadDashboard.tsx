@@ -26,23 +26,76 @@ export default function DeptHeadDashboard() {
     const [showAddUser, setShowAddUser] = useState(false)
     const [users, setUsers] = useState<ApiUser[]>([])
     const [loading, setLoading] = useState(true)
+    const [creatingUser, setCreatingUser] = useState(false)
+    const [addUserError, setAddUserError] = useState('')
+    const [newUser, setNewUser] = useState({
+        fullName: '',
+        role: 'doctor' as 'doctor' | 'liaison_officer' | 'hew',
+        initialPassword: '',
+    })
+
+    const loadUsers = async () => {
+        setLoading(true)
+        try {
+            const data = await trmsApi.getUsers(user?.facilityId)
+            setUsers(data)
+        } catch (error) {
+            console.error('Failed to fetch users:', error)
+        } finally {
+            setLoading(false)
+        }
+    }
 
     useEffect(() => {
-        const fetchUsers = async () => {
-            try {
-                const data = await trmsApi.getUsers(user?.facilityId)
-                setUsers(data)
-            } catch (error) {
-                console.error('Failed to fetch users:', error)
-            } finally {
-                setLoading(false)
-            }
-        }
-        fetchUsers()
+        void loadUsers()
     }, [user?.facilityId])
 
-    // Users in this department
-    const deptUsers = users.filter(u => u.departmentId === user?.departmentId)
+    const resetAddUserForm = () => {
+        setNewUser({
+            fullName: '',
+            role: 'doctor',
+            initialPassword: '',
+        })
+        setAddUserError('')
+    }
+
+    const handleCreateUser = async () => {
+        if (!newUser.fullName.trim() || !newUser.role || !newUser.initialPassword.trim()) {
+            setAddUserError('Please fill in all required fields.')
+            return
+        }
+        if (!user?.facilityId || !user?.departmentId) {
+            setAddUserError('Your account is missing facility or department assignment.')
+            return
+        }
+
+        try {
+            setCreatingUser(true)
+            setAddUserError('')
+            await trmsApi.createUser({
+                fullName: newUser.fullName.trim(),
+                role: newUser.role,
+                departmentId: user.departmentId,
+                facilityId: user.facilityId,
+                initialPassword: newUser.initialPassword,
+            })
+            await loadUsers()
+            setShowAddUser(false)
+            resetAddUserForm()
+        } catch (error: any) {
+            setAddUserError(error?.message || 'Failed to create user.')
+        } finally {
+            setCreatingUser(false)
+        }
+    }
+
+    // Users managed by the department head in this department
+    const deptUsers = users.filter(
+        (u) =>
+            u.departmentId === user?.departmentId &&
+            u.id !== user?.id &&
+            ['doctor', 'hew', 'liaison_officer'].includes(u.role),
+    )
     // Referrals for this department
     const deptReferrals = referrals.filter(r => r.department === user?.department)
 
@@ -79,7 +132,10 @@ export default function DeptHeadDashboard() {
                             {t('dh.users')} ({deptUsers.length})
                         </h3>
                         <button
-                            onClick={() => setShowAddUser(true)}
+                            onClick={() => {
+                                resetAddUserForm()
+                                setShowAddUser(true)
+                            }}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary-700 text-white hover:bg-primary-600 transition-colors"
                         >
                             <IconPlus size={13} /> {t('dh.addUser')}
@@ -178,30 +234,76 @@ export default function DeptHeadDashboard() {
                 <Modal
                     title={t('dh.addUser')}
                     icon={<div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-primary-500/20' : 'bg-primary-100'}`}><IconPlus size={14} className={isDark ? 'text-primary-300' : 'text-primary-600'} /></div>}
-                    onClose={() => setShowAddUser(false)}
+                    onClose={() => {
+                        setShowAddUser(false)
+                        resetAddUserForm()
+                    }}
                 >
-                    {/* TODO (Backend Team): POST /api/users { fullName, role, department, facility, initialPassword } */}
-                    <form onSubmit={(e) => { e.preventDefault(); alert('TODO: POST /api/users'); setShowAddUser(false) }} className="space-y-4">
-                        <FormField label="Full Name" required placeholder="e.g. Dr. Berhe Tadesse" />
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault()
+                            handleCreateUser()
+                        }}
+                        className="space-y-4"
+                    >
+                        <FormField
+                            label="Full Name"
+                            required
+                            placeholder="e.g. Dr. Berhe Tadesse"
+                            value={newUser.fullName}
+                            onChange={(e) => {
+                                setNewUser((current) => ({ ...current, fullName: e.target.value }))
+                                setAddUserError('')
+                            }}
+                        />
                         <FormField
                             label="Role"
                             as="select"
                             required
+                            value={newUser.role}
+                            onChange={(e) => {
+                                setNewUser((current) => ({ ...current, role: e.target.value as typeof current.role }))
+                                setAddUserError('')
+                            }}
                             options={[
-                                { value: 'Doctor', label: 'Doctor' },
-                                { value: 'Liaison Officer', label: 'Liaison Officer' },
-                                { value: 'HEW', label: 'Health Extension Worker' },
+                                { value: 'doctor', label: 'Doctor' },
+                                { value: 'liaison_officer', label: 'Liaison Officer' },
+                                { value: 'hew', label: 'Health Extension Worker' },
                             ]}
                         />
-                        <FormField label="Initial Password" type="password" required placeholder="Set a temporary password" />
+                        <FormField
+                            label="Initial Password"
+                            type="password"
+                            required
+                            placeholder="Set a temporary password"
+                            value={newUser.initialPassword}
+                            onChange={(e) => {
+                                setNewUser((current) => ({ ...current, initialPassword: e.target.value }))
+                                setAddUserError('')
+                            }}
+                        />
                         <p className={`text-[10px] ${isDark ? 'text-surface-500' : 'text-surface-400'}`}>
                             Department: <strong>{user?.department}</strong> · Facility: <strong>{user?.facility}</strong> (auto-assigned)
                         </p>
+                        {addUserError && (
+                            <p className="text-xs text-red-500 font-medium">{addUserError}</p>
+                        )}
                         <div className="flex gap-3 mt-4">
-                            <button type="submit" className="flex-1 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold hover:bg-primary-600 transition-colors">
-                                Create User
+                            <button
+                                type="submit"
+                                disabled={creatingUser}
+                                className="flex-1 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold hover:bg-primary-600 transition-colors disabled:opacity-60"
+                            >
+                                {creatingUser ? 'Creating...' : 'Create User'}
                             </button>
-                            <button type="button" onClick={() => setShowAddUser(false)} className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowAddUser(false)
+                                    resetAddUserForm()
+                                }}
+                                className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}
+                            >
                                 {t('common.cancel')}
                             </button>
                         </div>
