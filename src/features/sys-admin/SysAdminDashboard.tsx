@@ -39,6 +39,23 @@ export default function SysAdminDashboard() {
     type UserSortKey = 'fullName' | 'username' | 'role' | 'facilityId' | 'status'
     const PAGE_SIZE = 10
 
+    const resolveBackendAssetUrl = (value?: string) => {
+        if (!value) return ''
+        if (value.startsWith('http://') || value.startsWith('https://')) return value
+
+        const base = import.meta.env.VITE_API_BASE_URL
+        if (typeof base === 'string' && base.startsWith('http')) {
+            try {
+                return new URL(value, base).toString()
+            } catch {
+                return value
+            }
+        }
+
+        // In same-origin deployments, backend assets like `/api/v1/uploads/...` should work as-is.
+        return value
+    }
+
     const { t } = useLanguage()
     const { isDark } = useTheme()
     const [tab, setTab] = useState<'facilities' | 'users' | 'audit' | 'reports'>('facilities')
@@ -55,6 +72,7 @@ export default function SysAdminDashboard() {
     const [showInactiveFacilities, setShowInactiveFacilities] = useState(false)
     const [toasts, setToasts] = useState<ToastItem[]>([])
     const [uploadingFacilityImage, setUploadingFacilityImage] = useState<'new' | 'edit' | null>(null)
+    const [uploadingUserImage, setUploadingUserImage] = useState(false)
     const [newFacility, setNewFacility] = useState({
         name: '',
         type: 'general_hospital' as 'health_center' | 'primary_hospital' | 'general_hospital' | 'specialized_hospital',
@@ -72,6 +90,7 @@ export default function SysAdminDashboard() {
         facilityId: '',
         departmentId: '',
         initialPassword: '',
+        profileImageUrl: '',
     })
     const [newUserErrors, setNewUserErrors] = useState<Partial<Record<'fullName' | 'username' | 'role' | 'facilityId' | 'departmentId' | 'initialPassword', string>>>({})
     const [facilitySearch, setFacilitySearch] = useState('')
@@ -183,6 +202,7 @@ export default function SysAdminDashboard() {
             facilityId: '',
             departmentId: '',
             initialPassword: '',
+            profileImageUrl: '',
         })
         setDepartments([])
         setNewUserErrors({})
@@ -205,6 +225,20 @@ export default function SysAdminDashboard() {
             showNotice({ type: 'error', message: error?.message || 'Failed to upload image.' })
         } finally {
             setUploadingFacilityImage(null)
+        }
+    }
+
+    const handleUserImageUpload = async (file?: File | null) => {
+        if (!file) return
+
+        try {
+            setUploadingUserImage(true)
+            const uploaded = await trmsApi.uploadImage(file)
+            setNewUser((current) => ({ ...current, profileImageUrl: uploaded.url }))
+        } catch (error: any) {
+            showNotice({ type: 'error', message: error?.message || 'Failed to upload image.' })
+        } finally {
+            setUploadingUserImage(false)
         }
     }
 
@@ -330,6 +364,7 @@ export default function SysAdminDashboard() {
                 facilityId: newUser.facilityId,
                 departmentId: newUser.departmentId,
                 initialPassword: newUser.initialPassword,
+                profileImageUrl: newUser.profileImageUrl || undefined,
             })
             await loadAdminData()
             setShowAddUser(false)
@@ -704,9 +739,18 @@ export default function SysAdminDashboard() {
                                         <tr key={f.id} className={`border-b last:border-0 ${isDark ? 'border-surface-800' : 'border-surface-100'}`}>
                                             <td className="py-3">
                                                 <div className="flex items-center gap-2">
-                                                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white text-[10px] font-bold">
-                                                        {f.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2)}
-                                                    </div>
+                                                    {f.profileImageUrl ? (
+                                                        <img
+                                                            src={resolveBackendAssetUrl(f.profileImageUrl)}
+                                                            alt={`${f.name} logo`}
+                                                            className="w-7 h-7 rounded-lg object-cover border border-surface-300"
+                                                            loading="lazy"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white text-[10px] font-bold">
+                                                            {f.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2)}
+                                                        </div>
+                                                    )}
                                                     <span className="font-medium">{f.name}</span>
                                                 </div>
                                             </td>
@@ -1090,7 +1134,7 @@ export default function SysAdminDashboard() {
                             )}
                             {newFacility.profileImageUrl && (
                                 <img
-                                    src={newFacility.profileImageUrl}
+                                    src={resolveBackendAssetUrl(newFacility.profileImageUrl)}
                                     alt="Facility preview"
                                     className="w-20 h-20 rounded-lg object-cover border border-surface-300"
                                 />
@@ -1249,6 +1293,30 @@ export default function SysAdminDashboard() {
                             }}
                             error={newUserErrors.initialPassword}
                         />
+                        <div className="space-y-1.5">
+                            <label className={`block text-xs font-semibold ${isDark ? 'text-surface-300' : 'text-surface-700'}`}>
+                                Profile Image (optional)
+                            </label>
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => handleUserImageUpload(e.target.files?.[0])}
+                                className={`w-full px-3 py-2.5 rounded-lg text-sm border outline-none transition-colors ${isDark
+                                    ? 'bg-surface-950 border-surface-800 text-surface-100 file:bg-surface-800 file:border-0 file:text-surface-200 file:rounded file:px-2 file:py-1 file:mr-3'
+                                    : 'bg-surface-50 border-surface-200 text-surface-900 file:bg-surface-200 file:border-0 file:text-surface-700 file:rounded file:px-2 file:py-1 file:mr-3'
+                                }`}
+                            />
+                            {uploadingUserImage && (
+                                <p className="text-[11px] text-surface-500">Uploading image...</p>
+                            )}
+                            {newUser.profileImageUrl && (
+                                <img
+                                    src={resolveBackendAssetUrl(newUser.profileImageUrl)}
+                                    alt="User profile preview"
+                                    className="w-20 h-20 rounded-lg object-cover border border-surface-300"
+                                />
+                            )}
+                        </div>
                         <div className="flex gap-3 mt-4">
                             <button
                                 type="submit"
@@ -1398,7 +1466,7 @@ export default function SysAdminDashboard() {
                             )}
                             {editingFacility.profileImageUrl && (
                                 <img
-                                    src={editingFacility.profileImageUrl}
+                                    src={resolveBackendAssetUrl(editingFacility.profileImageUrl)}
                                     alt="Facility preview"
                                     className="w-20 h-20 rounded-lg object-cover border border-surface-300"
                                 />
