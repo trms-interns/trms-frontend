@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useLanguage } from "../../context/LanguageContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
 import { mockFacilities } from "../../data/mockData";
+import { trmsApi, type ApiFacility } from "../../lib/trmsApi";
 import { buildCreateReferralPayload } from "../../lib/trmsApi";
 import FormField from "../../components/FormField";
 import {
@@ -49,6 +50,23 @@ const emptyForm: FormState = {
 };
 
 const ETHIOPIAN_PHONE_REGEX = /^\+251\d{9}$/;
+const ENABLE_API_REFERRALS = import.meta.env.VITE_ENABLE_API_AUTH === "true";
+
+function mapMockFacilitiesToApiFacilities(data: typeof mockFacilities): ApiFacility[] {
+  return data.map((facility) => ({
+    id: facility.id,
+    name: facility.name,
+    type: "general_hospital",
+    location: facility.location,
+    contact: facility.contact,
+    services: facility.departments.map((department) => ({
+      id: department.id,
+      serviceType: department.name,
+      status: department.status,
+      estimatedDelayDays: department.estimatedDelayDays,
+    })),
+  }));
+}
 
 export default function CreateReferral() {
   const { t } = useLanguage();
@@ -64,6 +82,28 @@ export default function CreateReferral() {
     typeof buildCreateReferralPayload
   > | null>(null);
   const [createdReferralId, setCreatedReferralId] = useState("");
+  const [facilities, setFacilities] = useState<ApiFacility[]>([]);
+  const [loadingFacilities, setLoadingFacilities] = useState(true);
+
+  useEffect(() => {
+    const fetchFacilities = async () => {
+      if (!ENABLE_API_REFERRALS) {
+        setFacilities(mapMockFacilitiesToApiFacilities(mockFacilities));
+        setLoadingFacilities(false);
+        return;
+      }
+
+      try {
+        const data = await trmsApi.getFacilities();
+        setFacilities(data);
+      } catch (error) {
+        console.error('Failed to fetch facilities:', error);
+      } finally {
+        setLoadingFacilities(false);
+      }
+    };
+    fetchFacilities();
+  }, []);
 
   const set = (key: keyof FormState, val: string | boolean) => {
     setForm((prev) => ({ ...prev, [key]: val }));
@@ -76,7 +116,7 @@ export default function CreateReferral() {
   };
 
   // Show service status for selected facility
-  const selectedFacility = mockFacilities.find(
+  const selectedFacility = facilities.find(
     (f) => f.id === form.receivingFacility,
   );
 
@@ -115,11 +155,19 @@ export default function CreateReferral() {
     return Object.keys(stepOneErrors).length === 0;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validate()) return;
-    setQueuedPayload(buildCreateReferralPayload(form));
-    setCreatedReferralId(`REF-${Date.now().toString().slice(-6)}`);
-    setSubmitted(true);
+    const payload = buildCreateReferralPayload(form);
+    setQueuedPayload(payload);
+    
+    try {
+      const response = await trmsApi.createReferral(payload);
+      setCreatedReferralId(response.id);
+      setSubmitted(true);
+    } catch (error) {
+      console.error('Failed to create referral:', error);
+      alert('Failed to create referral. Please try again.');
+    }
   };
 
   if (submitted) {
@@ -329,11 +377,18 @@ export default function CreateReferral() {
                   )
                 }
                 error={errors.receivingFacility}
-                options={mockFacilities.map((f) => ({
+                options={facilities.map((f) => ({
                   value: f.id,
-                  label: `${f.name} (${f.location})`,
+                  label: `${f.name} (${f.location || "Unknown location"})`,
                 }))}
               />
+              {loadingFacilities && (
+                <p
+                  className={`text-[11px] ${isDark ? "text-surface-500" : "text-surface-500"}`}
+                >
+                  Loading facilities...
+                </p>
+              )}
               <FormField
                 label={t("ref.priority")}
                 required
@@ -360,7 +415,7 @@ export default function CreateReferral() {
                   Service Status — {selectedFacility.name}
                 </p>
                 <div className="flex flex-wrap gap-2 mt-1">
-                  {selectedFacility.departments.map((d) => (
+                  {selectedFacility.services?.map((d) => (
                     <span
                       key={d.id}
                       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
@@ -374,14 +429,14 @@ export default function CreateReferral() {
                       {d.status === "unavailable" && (
                         <IconAlertTriangle size={9} />
                       )}
-                      {d.name}: {d.status}
+                      {d.serviceType}: {d.status}
                       {d.estimatedDelayDays
                         ? ` (${d.estimatedDelayDays}d)`
                         : ""}
                     </span>
                   ))}
                 </div>
-                {selectedFacility.departments.some(
+                {selectedFacility.services?.some(
                   (d) => d.status === "unavailable",
                 ) && (
                   <p className="text-[11px] text-amber-500 font-medium mt-2 flex items-center gap-1">
