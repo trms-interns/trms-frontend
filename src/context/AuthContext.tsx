@@ -76,6 +76,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     password,
                 })
 
+                // Store the JWT token
+                trmsApi.setToken(response.access_token)
+
                 const apiUser: AuthUser = {
                     id: response.user.id,
                     username: response.user.username,
@@ -107,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const logout = () => {
         setUser(null)
         localStorage.removeItem('trms-user')
+        trmsApi.clearToken()
     }
 
     return (
