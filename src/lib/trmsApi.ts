@@ -27,6 +27,7 @@ export interface ApiUser {
     username: string
     fullName: string
     role: ApiUserRole
+    mustChangePassword?: boolean
     facilityId: string
     departmentId: string | null
     active?: boolean
@@ -47,8 +48,12 @@ export interface LoginResponse {
         username: string
         fullName: string
         role: ApiUserRole
+        mustChangePassword?: boolean
+        profileImageUrl?: string
         facilityId: string
+        facilityName?: string | null
         departmentId: string | null
+        departmentName?: string | null
     }
 }
 
@@ -238,6 +243,7 @@ export interface CreateUserRequest {
     facilityId: string
     initialPassword: string
     username?: string
+    profileImageUrl?: string
 }
 
 export interface UpdateUserRequest {
@@ -254,6 +260,8 @@ export interface Department {
     id: string
     name: string
     facilityId: string
+    type?: 'clinical' | 'liaison'
+    active?: boolean
 }
 
 export interface CreateDepartmentRequest {
