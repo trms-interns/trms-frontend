@@ -1,9 +1,9 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useLanguage } from '../../context/LanguageContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useAuth } from '../../context/AuthContext'
-import { mockSystemUsers, mockReferrals } from '../../data/mockData'
-import type { SystemUser } from '../../data/mockData'
+import { trmsApi, type ApiUser } from '../../lib/trmsApi'
+import { useReferrals } from '../../context/ReferralContext'
 import Modal from '../../components/Modal'
 import FormField from '../../components/FormField'
 import StatusBadge from '../../components/StatusBadge'
@@ -21,13 +21,30 @@ export default function DeptHeadDashboard() {
     const { t } = useLanguage()
     const { isDark } = useTheme()
     const { user } = useAuth()
+    const { referrals } = useReferrals()
     const [tab, setTab] = useState<'users' | 'referrals'>('users')
     const [showAddUser, setShowAddUser] = useState(false)
+    const [users, setUsers] = useState<ApiUser[]>([])
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+        const fetchUsers = async () => {
+            try {
+                const data = await trmsApi.getUsers(user?.facilityId)
+                setUsers(data)
+            } catch (error) {
+                console.error('Failed to fetch users:', error)
+            } finally {
+                setLoading(false)
+            }
+        }
+        fetchUsers()
+    }, [user?.facilityId])
 
     // Users in this department
-    const deptUsers = mockSystemUsers.filter(u => u.department === user?.department && u.facility === user?.facility)
+    const deptUsers = users.filter(u => u.departmentId === user?.departmentId)
     // Referrals for this department
-    const deptReferrals = mockReferrals.filter(r => r.department === user?.department)
+    const deptReferrals = referrals.filter(r => r.department === user?.department)
 
     const card = `rounded-2xl border p-5 ${isDark ? 'bg-surface-900 border-surface-800' : 'bg-white border-surface-200'}`
     const tabCls = (active: boolean) => `px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${active
@@ -69,15 +86,20 @@ export default function DeptHeadDashboard() {
                         </button>
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-xs">
-                            <thead>
-                                <tr className={`border-b ${isDark ? 'border-surface-700' : 'border-surface-200'}`}>
-                                    <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">{t('common.name')}</th>
-                                    <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">{t('common.role')}</th>
-                                    <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">{t('common.status')}</th>
-                                    <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">{t('common.lastLogin')}</th>
-                                    <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">{t('common.actions')}</th>
+                    {loading ? (
+                        <p className="text-sm text-surface-500">Loading users...</p>
+                    ) : deptUsers.length === 0 ? (
+                        <p className="text-sm text-surface-500">No users in this department</p>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                                <thead>
+                                    <tr className={`border-b ${isDark ? 'border-surface-700' : 'border-surface-200'}`}>
+                                        <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">{t('common.name')}</th>
+                                        <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">{t('common.role')}</th>
+                                        <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">{t('common.status')}</th>
+                                        <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">{t('common.lastLogin')}</th>
+                                        <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">{t('common.actions')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -122,6 +144,7 @@ export default function DeptHeadDashboard() {
                             </tbody>
                         </table>
                     </div>
+                    )}
                 </div>
             )}
 
