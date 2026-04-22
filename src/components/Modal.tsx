@@ -14,10 +14,10 @@ export default function Modal({ title, icon, children, onClose, maxWidth = 'max-
     const { isDark } = useTheme()
     return (
         <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            className={`fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 md:pt-20 ${isDark ? 'bg-surface-950/70' : 'bg-surface-900/35'}`}
             onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
         >
-            <div className={`w-full ${maxWidth} rounded-2xl shadow-2xl border animate-fade-in ${isDark ? 'bg-surface-800 border-surface-700' : 'bg-white border-surface-200'}`}>
+            <div className={`w-full ${maxWidth} max-h-[90vh] overflow-hidden rounded-2xl border animate-fade-in ${isDark ? 'bg-surface-900 border-surface-700 shadow-[0_24px_60px_-20px_rgba(0,0,0,0.75)]' : 'bg-white border-surface-200 shadow-[0_24px_60px_-20px_rgba(15,23,42,0.25)]'}`}>
                 <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? 'border-surface-700' : 'border-surface-100'}`}>
                     <div className="flex items-center gap-2.5">
                         {icon}
@@ -30,7 +30,7 @@ export default function Modal({ title, icon, children, onClose, maxWidth = 'max-
                         <IconX size={16} />
                     </button>
                 </div>
-                <div className="p-5">{children}</div>
+                <div className="p-5 overflow-y-auto max-h-[calc(90vh-73px)]">{children}</div>
             </div>
         </div>
     )
