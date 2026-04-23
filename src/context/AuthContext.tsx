@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, type ReactNode } from 'react'
+import React, { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { apiRoleToAppRole, trmsApi, type AppUserRole } from '../lib/trmsApi'
 
 interface AuthUser {
@@ -6,6 +6,7 @@ interface AuthUser {
     username: string
     name: string
     email?: string
+    phone?: string
     profileImageUrl?: string
     role: AppUserRole
     mustChangePassword?: boolean
@@ -24,6 +25,10 @@ interface AuthContextType {
 }
 
 const ENABLE_API_AUTH = import.meta.env.VITE_ENABLE_API_AUTH === 'true'
+const SESSION_USER_KEY = 'trms-user'
+const SESSION_EXPIRES_AT_KEY = 'trms-session-expires-at'
+const LEGACY_USER_KEY = 'trms-user'
+const SESSION_DURATION_MS = 8 * 60 * 60 * 1000
 
 const MOCK_USERS: Record<string, { password: string; user: AuthUser }> = {
     liaison: {
@@ -66,8 +71,17 @@ const AuthContext = createContext<AuthContextType>({
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<AuthUser | null>(() => {
-        const saved = localStorage.getItem('trms-user')
-        if (!saved) return null
+        const saved = sessionStorage.getItem(SESSION_USER_KEY)
+        const expiresAtRaw = sessionStorage.getItem(SESSION_EXPIRES_AT_KEY)
+        const expiresAt = expiresAtRaw ? Number(expiresAtRaw) : 0
+
+        if (!saved || !expiresAtRaw || Number.isNaN(expiresAt) || Date.now() >= expiresAt) {
+            sessionStorage.removeItem(SESSION_USER_KEY)
+            sessionStorage.removeItem(SESSION_EXPIRES_AT_KEY)
+            localStorage.removeItem(LEGACY_USER_KEY)
+            return null
+        }
+
         const parsed = JSON.parse(saved) as AuthUser
         return {
             ...parsed,
@@ -83,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         mustChangePassword: apiUser.mustChangePassword ?? false,
         profileImageUrl: apiUser.profileImageUrl,
         email: apiUser.email,
+        phone: apiUser.phone,
         facility: apiUser.facilityName || existingUser?.facility || apiUser.facilityId || 'Assigned Facility',
         department: apiUser.departmentName || existingUser?.department || apiUser.departmentId || 'Unassigned Department',
         facilityId: apiUser.facilityId,
@@ -105,7 +120,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const apiUser = mapApiUserToAuthUser(response.user)
 
                 setUser(apiUser)
-                localStorage.setItem('trms-user', JSON.stringify(apiUser))
+                sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(apiUser))
+                sessionStorage.setItem(
+                    SESSION_EXPIRES_AT_KEY,
+                    String(Date.now() + SESSION_DURATION_MS),
+                )
+                localStorage.removeItem(LEGACY_USER_KEY)
                 return true
             } catch {
                 return false
@@ -115,7 +135,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const match = MOCK_USERS[normalizedUsername]
         if (match && match.password === password) {
             setUser(match.user)
-            localStorage.setItem('trms-user', JSON.stringify(match.user))
+            sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(match.user))
+            sessionStorage.setItem(
+                SESSION_EXPIRES_AT_KEY,
+                String(Date.now() + SESSION_DURATION_MS),
+            )
+            localStorage.removeItem(LEGACY_USER_KEY)
             return true
         }
         return false
@@ -127,7 +152,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const apiUser = await trmsApi.getCurrentUser()
             const mappedUser = mapApiUserToAuthUser(apiUser, user)
             setUser(mappedUser)
-            localStorage.setItem('trms-user', JSON.stringify(mappedUser))
+            sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(mappedUser))
+            sessionStorage.setItem(
+                SESSION_EXPIRES_AT_KEY,
+                String(Date.now() + SESSION_DURATION_MS),
+            )
+            localStorage.removeItem(LEGACY_USER_KEY)
         } catch {
             // Keep current session if refresh fails transiently.
         }
@@ -135,9 +165,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const logout = () => {
         setUser(null)
-        localStorage.removeItem('trms-user')
+        sessionStorage.removeItem(SESSION_USER_KEY)
+        sessionStorage.removeItem(SESSION_EXPIRES_AT_KEY)
+        localStorage.removeItem(LEGACY_USER_KEY)
         trmsApi.clearToken()
     }
+
+    useEffect(() => {
+        if (!user) return
+
+        const checkSessionExpiry = () => {
+            const expiresAtRaw = sessionStorage.getItem(SESSION_EXPIRES_AT_KEY)
+            const expiresAt = expiresAtRaw ? Number(expiresAtRaw) : 0
+            if (!expiresAtRaw || Number.isNaN(expiresAt) || Date.now() >= expiresAt) {
+                logout()
+                localStorage.setItem('trms-auth-notice', 'Session expired. Please sign in again.')
+            }
+        }
+
+        checkSessionExpiry()
+        const interval = window.setInterval(checkSessionExpiry, 60_000)
+        window.addEventListener('focus', checkSessionExpiry)
+
+        return () => {
+            window.clearInterval(interval)
+            window.removeEventListener('focus', checkSessionExpiry)
+        }
+    }, [user])
 
     return (
         <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, refreshCurrentUser, logout }}>
