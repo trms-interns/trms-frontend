@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 import { trmsApi, type ApiFacility, type ApiUser, type Department } from '../../lib/trmsApi'
 import Modal from '../../components/Modal'
 import FormField from '../../components/FormField'
+import DashboardMiniChart from '../../components/DashboardMiniChart'
 import {
     IconBuilding,
     IconPlus,
@@ -16,7 +17,15 @@ import {
     IconChartBar,
     IconDownload,
     IconSettings,
+    IconUsers,
+    IconKey,
 } from '@tabler/icons-react'
+
+function monthOffsetValue(offset: number): string {
+    const date = new Date()
+    date.setMonth(date.getMonth() + offset)
+    return date.toISOString().slice(0, 7)
+}
 
 export default function FacilityAdminDashboard() {
     type SortDirection = 'asc' | 'desc'
@@ -26,7 +35,7 @@ export default function FacilityAdminDashboard() {
     const { t } = useLanguage()
     const { isDark } = useTheme()
     const { user } = useAuth()
-    const [tab, setTab] = useState<'departments' | 'service' | 'reports'>('departments')
+    const [tab, setTab] = useState<'departments' | 'users' | 'service' | 'reports'>('departments')
     const [showAddDept, setShowAddDept] = useState(false)
     const [facilities, setFacilities] = useState<ApiFacility[]>([])
     const [users, setUsers] = useState<ApiUser[]>([])
@@ -35,19 +44,32 @@ export default function FacilityAdminDashboard() {
     const [creatingDepartment, setCreatingDepartment] = useState(false)
     const [savingDepartment, setSavingDepartment] = useState(false)
     const [deletingDepartmentId, setDeletingDepartmentId] = useState<string | null>(null)
+    const [togglingDepartmentId, setTogglingDepartmentId] = useState<string | null>(null)
     const [updatingServiceId, setUpdatingServiceId] = useState<string | null>(null)
+    const [creatingService, setCreatingService] = useState(false)
+    const [showAddService, setShowAddService] = useState(false)
+    const [serviceDelayInputs, setServiceDelayInputs] = useState<Record<string, string>>({})
     const [addDeptError, setAddDeptError] = useState('')
     const [departmentActionError, setDepartmentActionError] = useState('')
     const [serviceActionError, setServiceActionError] = useState('')
+    const [userActionError, setUserActionError] = useState('')
     const [editingDepartment, setEditingDepartment] = useState<Department | null>(null)
     const [confirmDeleteDepartment, setConfirmDeleteDepartment] = useState<Department | null>(null)
+    const [resetPasswordUser, setResetPasswordUser] = useState<ApiUser | null>(null)
+    const [resettingUserPassword, setResettingUserPassword] = useState(false)
+    const [resetPasswordForm, setResetPasswordForm] = useState({
+        password: '',
+        confirmPassword: '',
+    })
     const [departmentSearch, setDepartmentSearch] = useState('')
     const [departmentPage, setDepartmentPage] = useState(1)
     const [departmentSortKey, setDepartmentSortKey] = useState<DepartmentSortKey>('name')
     const [departmentSortDirection, setDepartmentSortDirection] = useState<SortDirection>('asc')
     const [reportPeriod, setReportPeriod] = useState(new Date().toISOString().slice(0, 7))
+    const [reportPriority, setReportPriority] = useState<'' | 'routine' | 'urgent' | 'emergency'>('')
     const [reportLoading, setReportLoading] = useState(false)
     const [reportError, setReportError] = useState('')
+    const [reportNotice, setReportNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
     const [backendReportSummary, setBackendReportSummary] = useState({
         sent: 0,
         received: 0,
@@ -64,6 +86,11 @@ export default function FacilityAdminDashboard() {
         adminPassword: '',
         type: 'clinical' as 'clinical' | 'liaison',
     })
+    const [newService, setNewService] = useState({
+        serviceType: '',
+        status: 'available' as 'available' | 'limited' | 'unavailable',
+        estimatedDelayDays: '',
+    })
 
     const loadFacilityAdminData = async () => {
         setLoading(true)
@@ -73,7 +100,34 @@ export default function FacilityAdminDashboard() {
                 trmsApi.getUsers(user?.facilityId),
                 user?.facilityId ? trmsApi.getDepartments(user.facilityId) : Promise.resolve([]),
             ])
-            setFacilities(facilitiesData)
+            let nextFacilities = facilitiesData
+            if (user?.facilityId) {
+                try {
+                    const facilityServices = await trmsApi.getFacilityServices(user.facilityId)
+                    nextFacilities = facilitiesData.map((facilityItem) =>
+                        facilityItem.id === user.facilityId
+                            ? {
+                                ...facilityItem,
+                                services: facilityServices,
+                            }
+                            : {
+                                ...facilityItem,
+                                services: Array.isArray(facilityItem.services) ? facilityItem.services : [],
+                            },
+                    )
+                } catch {
+                    nextFacilities = facilitiesData.map((facilityItem) => ({
+                        ...facilityItem,
+                        services: Array.isArray(facilityItem.services) ? facilityItem.services : [],
+                    }))
+                }
+            } else {
+                nextFacilities = facilitiesData.map((facilityItem) => ({
+                    ...facilityItem,
+                    services: Array.isArray(facilityItem.services) ? facilityItem.services : [],
+                }))
+            }
+            setFacilities(nextFacilities)
             setUsers(usersData)
             setDepartments(departmentsData)
         } catch (error) {
@@ -114,6 +168,19 @@ export default function FacilityAdminDashboard() {
         unavailable: { icon: <IconCircleX size={11} />, cls: 'bg-red-500/15 text-red-500 border-red-500/25' },
     }
 
+    const normalizeServiceStatus = (value?: string): 'available' | 'limited' | 'unavailable' => {
+        if (value === 'available' || value === 'limited' || value === 'unavailable') {
+            return value
+        }
+        return 'unavailable'
+    }
+
+    const buildFacilityReportQuery = (period: string, facilityId?: string) => ({
+        period,
+        facilityId,
+        priority: reportPriority || undefined,
+    })
+
     const loadFacilityReportSummary = async (period: string, facilityId?: string) => {
         if (!facilityId) {
             setBackendReportSummary({
@@ -130,10 +197,7 @@ export default function FacilityAdminDashboard() {
         try {
             setReportLoading(true)
             setReportError('')
-            const result: any = await trmsApi.getReport({
-                month: period,
-                facilityId,
-            })
+            const result: any = await trmsApi.getReport(buildFacilityReportQuery(period, facilityId))
             setBackendReportSummary({
                 sent: Number(result?.sent ?? 0),
                 received: Number(result?.received ?? 0),
@@ -154,20 +218,23 @@ export default function FacilityAdminDashboard() {
         if (!facilityId) return
         try {
             setReportError('')
+            setReportNotice(null)
             const blob = await trmsApi.exportReport({
-                month: reportPeriod,
-                facilityId,
+                ...buildFacilityReportQuery(reportPeriod, facilityId),
                 format: 'csv',
             })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url; a.download = `facility-report-${new Date().toISOString().split('T')[0]}.csv`; a.click()
         URL.revokeObjectURL(url)
+            setReportNotice({ type: 'success', message: 'Report export completed.' })
         } catch (error: any) {
             setReportError(error?.message || 'Failed to export report.')
+            setReportNotice({ type: 'error', message: error?.message || 'Report export failed.' })
         }
     }
 
+    const hasFacilityReportData = Object.values(backendReportSummary).some((value) => Number(value) > 0)
     const handleCreateDepartment = async () => {
         const facilityId = newDepartment.facilityId || user?.facilityId || facility?.id || ''
 
@@ -241,9 +308,24 @@ export default function FacilityAdminDashboard() {
         }
     }
 
+    const handleToggleDepartmentActive = async (department: Department) => {
+        const currentlyActive = department.active !== false
+        try {
+            setTogglingDepartmentId(department.id)
+            setDepartmentActionError('')
+            await trmsApi.updateDepartment(department.id, { active: !currentlyActive })
+            await loadFacilityAdminData()
+        } catch (error: any) {
+            setDepartmentActionError(error?.message || 'Failed to update department status.')
+        } finally {
+            setTogglingDepartmentId(null)
+        }
+    }
+
     const handleUpdateServiceStatus = async (
         serviceId: string,
         status: 'available' | 'limited' | 'unavailable',
+        estimatedDelayDays?: number,
     ) => {
         const facilityId = user?.facilityId || facility?.id
         if (!facilityId) {
@@ -257,14 +339,22 @@ export default function FacilityAdminDashboard() {
             const updated = await trmsApi.updateFacilityService(facilityId, {
                 serviceId,
                 status,
+                estimatedDelayDays: status === 'limited' ? estimatedDelayDays : undefined,
             })
+            setServiceDelayInputs((current) => ({
+                ...current,
+                [updated.id]:
+                    updated.estimatedDelayDays !== undefined && updated.estimatedDelayDays !== null
+                        ? String(updated.estimatedDelayDays)
+                        : '',
+            }))
             setFacilities((current) =>
                 current.map((item) =>
                     item.id !== facilityId
                         ? item
                         : {
                             ...item,
-                            services: item.services.map((service) =>
+                            services: (Array.isArray(item.services) ? item.services : []).map((service) =>
                                 service.id === updated.id ? updated : service,
                             ),
                         },
@@ -274,6 +364,170 @@ export default function FacilityAdminDashboard() {
             setServiceActionError(error?.message || 'Failed to update service status.')
         } finally {
             setUpdatingServiceId(null)
+        }
+    }
+
+    const resetNewServiceForm = () => {
+        setNewService({
+            serviceType: '',
+            status: 'available',
+            estimatedDelayDays: '',
+        })
+    }
+
+    const handleCreateService = async () => {
+        const facilityId = user?.facilityId || facility?.id
+        if (!facilityId) {
+            setServiceActionError('Facility is not available for service creation.')
+            return
+        }
+
+        const serviceType = newService.serviceType.trim()
+        if (!serviceType) {
+            setServiceActionError('Service type is required.')
+            return
+        }
+
+        if (
+            facility?.services?.some(
+                (service) =>
+                    service.serviceType.trim().toLowerCase() === serviceType.toLowerCase(),
+            )
+        ) {
+            setServiceActionError('A service with this name already exists.')
+            return
+        }
+
+        let estimatedDelayDays: number | undefined
+        if (newService.status === 'limited') {
+            const raw = newService.estimatedDelayDays.trim()
+            if (!raw) {
+                setServiceActionError('Estimated delay days is required for limited services.')
+                return
+            }
+
+            const parsed = Number(raw)
+            if (!Number.isInteger(parsed) || parsed < 0) {
+                setServiceActionError('Estimated delay days must be a whole number (0 or greater).')
+                return
+            }
+            estimatedDelayDays = parsed
+        }
+
+        try {
+            setCreatingService(true)
+            setServiceActionError('')
+            const created = await trmsApi.createFacilityService(facilityId, {
+                serviceType,
+                status: newService.status,
+                estimatedDelayDays,
+            })
+
+            setFacilities((current) =>
+                current.map((item) =>
+                    item.id !== facilityId
+                        ? item
+                        : {
+                              ...item,
+                              services: [...(Array.isArray(item.services) ? item.services : []), created],
+                          },
+                ),
+            )
+            setServiceDelayInputs((current) => ({
+                ...current,
+                [created.id]:
+                    created.estimatedDelayDays !== undefined && created.estimatedDelayDays !== null
+                        ? String(created.estimatedDelayDays)
+                        : '',
+            }))
+            resetNewServiceForm()
+            setShowAddService(false)
+        } catch (error: any) {
+            setServiceActionError(error?.message || 'Failed to create service.')
+        } finally {
+            setCreatingService(false)
+        }
+    }
+
+    const handleSaveServiceDelay = async (serviceId: string) => {
+        const currentService = facility?.services?.find((service) => service.id === serviceId)
+        if (!currentService) return
+        if (currentService.status !== 'limited') return
+
+        const raw = (serviceDelayInputs[serviceId] ?? '').trim()
+        if (raw === '') {
+            setServiceActionError('Please enter estimated delay days for limited services.')
+            return
+        }
+
+        const parsed = Number(raw)
+        if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+            setServiceActionError('Estimated delay days must be a whole number (0 or greater).')
+            return
+        }
+
+        await handleUpdateServiceStatus(serviceId, 'limited', parsed)
+    }
+
+    const facilityManagedUsers = useMemo(
+        () =>
+            users.filter(
+                (u) =>
+                    u.facilityId === (user?.facilityId || facility?.id) &&
+                    u.role === 'department_head',
+            ),
+        [facility?.id, user?.facilityId, users],
+    )
+    const facilityChartData = [
+        { label: 'Departments', value: departments.length, colorClass: 'bg-primary-600' },
+        { label: 'Dept Heads', value: facilityManagedUsers.length, colorClass: 'bg-emerald-500' },
+        {
+            label: 'Services Up',
+            value: facility?.services?.filter((service) => normalizeServiceStatus(service.status) === 'available').length || 0,
+            colorClass: 'bg-amber-500',
+        },
+        {
+            label: 'Services Down',
+            value: facility?.services?.filter((service) => normalizeServiceStatus(service.status) === 'unavailable').length || 0,
+            colorClass: 'bg-red-500',
+        },
+    ]
+
+    const openResetPasswordModal = (targetUser: ApiUser) => {
+        setResetPasswordUser(targetUser)
+        setUserActionError('')
+        setResetPasswordForm({ password: '', confirmPassword: '' })
+    }
+
+    const handleResetUserPassword = async () => {
+        if (!resetPasswordUser) return
+        const password = resetPasswordForm.password.trim()
+        const confirmPassword = resetPasswordForm.confirmPassword.trim()
+
+        if (!password) {
+            setUserActionError('Temporary password is required.')
+            return
+        }
+        if (password.length < 8) {
+            setUserActionError('Temporary password must be at least 8 characters.')
+            return
+        }
+        if (password !== confirmPassword) {
+            setUserActionError('Passwords do not match.')
+            return
+        }
+
+        try {
+            setResettingUserPassword(true)
+            setUserActionError('')
+            await trmsApi.updateUser(resetPasswordUser.id, { password })
+            await loadFacilityAdminData()
+            setResetPasswordUser(null)
+            setResetPasswordForm({ password: '', confirmPassword: '' })
+        } catch (error: any) {
+            setUserActionError(error?.message || 'Failed to reset user password.')
+        } finally {
+            setResettingUserPassword(false)
         }
     }
 
@@ -342,7 +596,7 @@ export default function FacilityAdminDashboard() {
     useEffect(() => {
         if (tab !== 'reports') return
         void loadFacilityReportSummary(reportPeriod, user?.facilityId || facility?.id)
-    }, [tab, reportPeriod, user?.facilityId, facility?.id])
+    }, [tab, reportPeriod, reportPriority, user?.facilityId, facility?.id])
 
     return (
         <div className="space-y-6 animate-fade-in">
@@ -357,6 +611,9 @@ export default function FacilityAdminDashboard() {
                     <button onClick={() => setTab('departments')} className={tabCls(tab === 'departments')}>
                         <span className="flex items-center gap-1.5"><IconBuilding size={14} />{t('fa.departments')}</span>
                     </button>
+                    <button onClick={() => setTab('users')} className={tabCls(tab === 'users')}>
+                        <span className="flex items-center gap-1.5"><IconUsers size={14} />Users</span>
+                    </button>
                     <button onClick={() => setTab('service')} className={tabCls(tab === 'service')}>
                         <span className="flex items-center gap-1.5"><IconSettings size={14} />{t('nav.serviceStatus')}</span>
                     </button>
@@ -365,6 +622,8 @@ export default function FacilityAdminDashboard() {
                     </button>
                 </div>
             </div>
+
+            <DashboardMiniChart title="Facility Operations Snapshot" data={facilityChartData} />
 
             {/* ── DEPARTMENTS TAB ────────────────────────────────────────── */}
             {tab === 'departments' && (
@@ -436,6 +695,22 @@ export default function FacilityAdminDashboard() {
                                                         <button
                                                             onClick={() => {
                                                                 setDepartmentActionError('')
+                                                                void handleToggleDepartmentActive(dept)
+                                                            }}
+                                                            disabled={togglingDepartmentId === dept.id}
+                                                            className={`px-2.5 h-8 rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-60 ${isActive
+                                                                ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                                                                : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                                                            }`}
+                                                            title={isActive ? 'Deactivate department' : 'Restore department'}
+                                                        >
+                                                            {togglingDepartmentId === dept.id
+                                                                ? isActive ? 'Deactivating...' : 'Restoring...'
+                                                                : isActive ? 'Deactivate' : 'Restore'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setDepartmentActionError('')
                                                                 setEditingDepartment({ ...dept })
                                                             }}
                                                             className={`w-8 h-8 rounded-lg transition-colors flex items-center justify-center ${isDark ? 'hover:bg-surface-800 text-surface-400' : 'hover:bg-surface-100 text-surface-500'}`}
@@ -491,28 +766,158 @@ export default function FacilityAdminDashboard() {
                 </div>
             )}
 
+            {/* ── USERS TAB ─────────────────────────────────────────────── */}
+            {tab === 'users' && (
+                <div className={card}>
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-sm font-bold">Department Heads ({facilityManagedUsers.length})</h3>
+                    </div>
+                    {loading ? (
+                        <p className="text-sm text-surface-500">Loading users...</p>
+                    ) : facilityManagedUsers.length === 0 ? (
+                        <p className="text-sm text-surface-500">No department head users found.</p>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                                <thead>
+                                    <tr className={`border-b ${isDark ? 'border-surface-700' : 'border-surface-200'}`}>
+                                        <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">Name</th>
+                                        <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">Username</th>
+                                        <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">Role</th>
+                                        <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">Status</th>
+                                        <th className="text-left pb-2 font-semibold text-surface-400 uppercase tracking-wide">{t('common.actions')}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {facilityManagedUsers.map((u) => (
+                                        <tr key={u.id} className={`border-b last:border-0 ${isDark ? 'border-surface-800' : 'border-surface-100'}`}>
+                                            <td className="py-3 font-medium">{u.fullName}</td>
+                                            <td className="py-3 text-surface-500">{u.username}</td>
+                                            <td className="py-3 text-surface-500">Department Head</td>
+                                            <td className="py-3">
+                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${u.active === false
+                                                    ? 'bg-surface-500/15 text-surface-400 border-surface-500/25'
+                                                    : 'bg-emerald-500/15 text-emerald-500 border-emerald-500/25'
+                                                }`}>
+                                                    {u.active === false ? <IconCircleX size={9} /> : <IconCircleCheck size={9} />} {u.active === false ? 'Inactive' : 'Active'}
+                                                </span>
+                                            </td>
+                                            <td className="py-3">
+                                                <button
+                                                    onClick={() => openResetPasswordModal(u)}
+                                                    className={`w-8 h-8 rounded-lg transition-colors flex items-center justify-center ${isDark ? 'hover:bg-surface-800 text-surface-400' : 'hover:bg-surface-100 text-surface-500'}`}
+                                                    title="Reset password"
+                                                >
+                                                    <IconKey size={13} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* ── SERVICE STATUS TAB ─────────────────────────────────────── */}
             {tab === 'service' && (
                 <div className={card}>
-                    <h3 className="text-sm font-bold mb-4">{t('dir.serviceStatus')} — {facilityName}</h3>
+                    <div className="flex items-center justify-between mb-4 gap-3">
+                        <h3 className="text-sm font-bold">{t('dir.serviceStatus')} — {facilityName}</h3>
+                        <button
+                            onClick={() => {
+                                setServiceActionError('')
+                                setShowAddService((current) => !current)
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary-700 text-white hover:bg-primary-600 transition-colors"
+                        >
+                            <IconPlus size={13} /> {showAddService ? 'Cancel' : 'Add Service'}
+                        </button>
+                    </div>
                     {serviceActionError && (
                         <p className="mb-3 text-xs text-red-500 font-medium">{serviceActionError}</p>
+                    )}
+                    {showAddService && (
+                        <div className={`mb-4 p-4 rounded-xl border ${isDark ? 'border-surface-800 bg-surface-950' : 'border-surface-200 bg-surface-50'}`}>
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                                <FormField
+                                    label="Service Type"
+                                    required
+                                    value={newService.serviceType}
+                                    onChange={(e) =>
+                                        setNewService((current) => ({
+                                            ...current,
+                                            serviceType: e.target.value,
+                                        }))
+                                    }
+                                    placeholder="e.g. Radiology"
+                                />
+                                <FormField
+                                    label="Status"
+                                    as="select"
+                                    value={newService.status}
+                                    onChange={(e) =>
+                                        setNewService((current) => ({
+                                            ...current,
+                                            status: e.target.value as 'available' | 'limited' | 'unavailable',
+                                        }))
+                                    }
+                                    options={[
+                                        { value: 'available', label: 'Available' },
+                                        { value: 'limited', label: 'Limited' },
+                                        { value: 'unavailable', label: 'Unavailable' },
+                                    ]}
+                                />
+                                <FormField
+                                    label="Delay Days"
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    value={newService.estimatedDelayDays}
+                                    onChange={(e) =>
+                                        setNewService((current) => ({
+                                            ...current,
+                                            estimatedDelayDays: e.target.value,
+                                        }))
+                                    }
+                                    placeholder="0"
+                                    disabled={newService.status !== 'limited'}
+                                    hint={newService.status === 'limited' ? 'Required for limited services' : 'Used only when status is limited'}
+                                />
+                                <div className="flex items-end">
+                                    <button
+                                        type="button"
+                                        onClick={() => void handleCreateService()}
+                                        disabled={creatingService}
+                                        className="w-full h-[42px] px-3 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors disabled:opacity-60"
+                                    >
+                                        {creatingService ? 'Creating...' : 'Create Service'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     )}
                     {loading ? (
                         <p className="text-sm text-surface-500">Loading...</p>
                     ) : (
                         <div className="space-y-2">
                             {facility?.services?.map(dept => {
-                                const sc = statusConfig[dept.status]
+                                const safeStatus = normalizeServiceStatus(dept.status)
+                                const sc = statusConfig[safeStatus]
+                                const delayValue =
+                                    serviceDelayInputs[dept.id] ??
+                                    (dept.estimatedDelayDays !== undefined && dept.estimatedDelayDays !== null
+                                        ? String(dept.estimatedDelayDays)
+                                        : '')
                                 return (
                                     <div key={dept.id} className={`flex items-center gap-3 p-3.5 rounded-xl border ${isDark ? 'border-surface-800 bg-surface-950' : 'border-surface-200 bg-surface-50'}`}>
                                         <div className="flex-1">
                                             <p className="text-sm font-semibold">{dept.serviceType}</p>
                                         </div>
-                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${sc.cls}`}>{sc.icon} {dept.status}</span>
-                                        {/* TODO (Backend Team): PATCH /api/services/{dept.id} { status, estimated_delay_days } */}
+                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${sc.cls}`}>{sc.icon} {safeStatus}</span>
                                         <select
-                                            value={dept.status}
+                                            value={safeStatus}
                                             disabled={updatingServiceId === dept.id}
                                             className={`px-2 py-1 rounded-lg text-[11px] border outline-none ${isDark ? 'bg-surface-900 border-surface-700 text-surface-300' : 'bg-white border-surface-200 text-surface-700'}`}
                                             onChange={(e) =>
@@ -526,6 +931,33 @@ export default function FacilityAdminDashboard() {
                                             <option value="limited">Limited</option>
                                             <option value="unavailable">Unavailable</option>
                                         </select>
+                                        {safeStatus === 'limited' && (
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    step={1}
+                                                    value={delayValue}
+                                                    disabled={updatingServiceId === dept.id}
+                                                    onChange={(e) =>
+                                                        setServiceDelayInputs((current) => ({
+                                                            ...current,
+                                                            [dept.id]: e.target.value,
+                                                        }))
+                                                    }
+                                                    placeholder="Delay days"
+                                                    className={`w-24 px-2 py-1 rounded-lg text-[11px] border outline-none ${isDark ? 'bg-surface-900 border-surface-700 text-surface-300' : 'bg-white border-surface-200 text-surface-700'}`}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void handleSaveServiceDelay(dept.id)}
+                                                    disabled={updatingServiceId === dept.id}
+                                                    className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-primary-700 text-white hover:bg-primary-600 transition-colors disabled:opacity-60"
+                                                >
+                                                    Save
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 )
                             })}
@@ -538,7 +970,7 @@ export default function FacilityAdminDashboard() {
             {tab === 'reports' && (
                 <div className={card}>
                     <div className="flex items-center justify-between mb-5">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-wrap">
                             <h3 className="text-sm font-bold">Monthly Report — {facilityName}</h3>
                             <input
                                 type="month"
@@ -546,6 +978,30 @@ export default function FacilityAdminDashboard() {
                                 onChange={(e) => setReportPeriod(e.target.value)}
                                 className={`px-2.5 py-1.5 rounded-lg text-xs border outline-none ${isDark ? 'bg-surface-950 border-surface-800 text-surface-100 focus:border-primary-400' : 'bg-surface-50 border-surface-200 focus:border-primary-500'}`}
                             />
+                            <select
+                                value={reportPriority}
+                                onChange={(e) => setReportPriority(e.target.value as typeof reportPriority)}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs border outline-none ${isDark ? 'bg-surface-950 border-surface-800 text-surface-100 focus:border-primary-400' : 'bg-surface-50 border-surface-200 focus:border-primary-500'}`}
+                            >
+                                <option value="">All Priorities</option>
+                                <option value="routine">Routine</option>
+                                <option value="urgent">Urgent</option>
+                                <option value="emergency">Emergency</option>
+                            </select>
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    onClick={() => setReportPeriod(monthOffsetValue(0))}
+                                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors ${isDark ? 'border-surface-700 text-surface-300 hover:bg-surface-800' : 'border-surface-300 text-surface-700 hover:bg-surface-100'}`}
+                                >
+                                    This Month
+                                </button>
+                                <button
+                                    onClick={() => setReportPeriod(monthOffsetValue(-1))}
+                                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors ${isDark ? 'border-surface-700 text-surface-300 hover:bg-surface-800' : 'border-surface-300 text-surface-700 hover:bg-surface-100'}`}
+                                >
+                                    Last Month
+                                </button>
+                            </div>
                         </div>
                         <div className="flex items-center gap-2">
                             <button
@@ -562,8 +1018,21 @@ export default function FacilityAdminDashboard() {
                     {reportError && (
                         <p className="mb-3 text-xs text-red-500 font-medium">{reportError}</p>
                     )}
+                    {reportNotice && (
+                        <p className={`mb-3 text-xs font-medium ${reportNotice.type === 'success' ? 'text-emerald-500' : 'text-red-500'}`}>
+                            {reportNotice.message}
+                        </p>
+                    )}
                     {reportLoading ? (
                         <p className="text-sm text-surface-500">Loading backend report summary...</p>
+                    ) : !facility?.id && !user?.facilityId ? (
+                        <div className={`rounded-xl border p-4 text-sm ${isDark ? 'border-surface-800 bg-surface-950 text-surface-300' : 'border-surface-200 bg-surface-50 text-surface-600'}`}>
+                            No facility is linked to this account, so report data cannot be generated.
+                        </div>
+                    ) : !hasFacilityReportData ? (
+                        <div className={`rounded-xl border p-4 text-sm ${isDark ? 'border-surface-800 bg-surface-950 text-surface-300' : 'border-surface-200 bg-surface-50 text-surface-600'}`}>
+                            No report data for <strong>{reportPeriod}</strong>{reportPriority ? ` with ${reportPriority} priority` : ''}. Try another month, priority, or refresh after new activity.
+                        </div>
                     ) : (
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                             {Object.entries(backendReportSummary).map(([key, val]) => (
@@ -780,6 +1249,75 @@ export default function FacilityAdminDashboard() {
                                 onClick={() => {
                                     setShowAddDept(false)
                                     resetAddDepartmentForm()
+                                }}
+                                className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}
+                            >
+                                {t('common.cancel')}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
+            {/* Reset User Password Modal */}
+            {resetPasswordUser && (
+                <Modal
+                    title="Reset User Password"
+                    icon={<div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-primary-500/20' : 'bg-primary-100'}`}><IconKey size={14} className={isDark ? 'text-primary-300' : 'text-primary-600'} /></div>}
+                    onClose={() => {
+                        setResetPasswordUser(null)
+                        setUserActionError('')
+                        setResetPasswordForm({ password: '', confirmPassword: '' })
+                    }}
+                    maxWidth="max-w-md"
+                >
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault()
+                            void handleResetUserPassword()
+                        }}
+                        className="space-y-4"
+                    >
+                        <p className={`text-sm ${isDark ? 'text-surface-300' : 'text-surface-700'}`}>
+                            Set a temporary password for <strong>{resetPasswordUser.fullName}</strong>.
+                        </p>
+                        <FormField
+                            label="Temporary Password"
+                            type="password"
+                            required
+                            value={resetPasswordForm.password}
+                            onChange={(e) => {
+                                setResetPasswordForm((current) => ({ ...current, password: e.target.value }))
+                                setUserActionError('')
+                            }}
+                        />
+                        <FormField
+                            label="Confirm Password"
+                            type="password"
+                            required
+                            value={resetPasswordForm.confirmPassword}
+                            onChange={(e) => {
+                                setResetPasswordForm((current) => ({ ...current, confirmPassword: e.target.value }))
+                                setUserActionError('')
+                            }}
+                        />
+                        {userActionError && (
+                            <p className="text-xs text-red-500 font-medium">{userActionError}</p>
+                        )}
+                        <div className="flex gap-3 mt-4">
+                            <button
+                                type="submit"
+                                disabled={resettingUserPassword}
+                                className="flex-1 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold hover:bg-primary-600 transition-colors disabled:opacity-60"
+                            >
+                                {resettingUserPassword ? 'Resetting...' : 'Reset Password'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setResetPasswordUser(null)
+                                    setUserActionError('')
+                                    setResetPasswordForm({ password: '', confirmPassword: '' })
                                 }}
                                 className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}
                             >

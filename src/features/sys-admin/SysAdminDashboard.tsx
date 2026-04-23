@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useLanguage } from '../../context/LanguageContext'
 import { useTheme } from '../../context/ThemeContext'
-import { trmsApi, type ApiFacility, type ApiUser, type Department, type ApiUserRole, apiRoleToAppRole } from '../../lib/trmsApi'
+import { trmsApi, type ApiFacility, type ApiUser, type Department, type ApiUserRole, type AuditChainVerificationResult, apiRoleToAppRole } from '../../lib/trmsApi'
 import Modal from '../../components/Modal'
 import FormField from '../../components/FormField'
 import ToastStack, { type ToastItem } from '../../components/ToastStack'
+import DashboardMiniChart from '../../components/DashboardMiniChart'
 import {
     IconServer,
     IconPlus,
@@ -17,6 +18,7 @@ import {
     IconChartBar,
     IconDownload,
     IconUsers,
+    IconKey,
 } from '@tabler/icons-react'
 
 interface UiNotice {
@@ -31,6 +33,26 @@ interface BackendReportSummary {
     rejected: number
     completed: number
     pending: number
+}
+
+interface SystemReportRow {
+    facilityId: string
+    facilityName: string
+    period: string
+    priority: 'routine' | 'urgent' | 'emergency' | 'all'
+    sent: number
+    received: number
+    accepted: number
+    rejected: number
+    forwarded: number
+    completed: number
+    pending: number
+}
+
+function monthOffsetValue(offset: number): string {
+    const date = new Date()
+    date.setMonth(date.getMonth() + offset)
+    return date.toISOString().slice(0, 7)
 }
 
 export default function SysAdminDashboard() {
@@ -65,6 +87,7 @@ export default function SysAdminDashboard() {
     const [editingUser, setEditingUser] = useState<ApiUser | null>(null)
     const [confirmDeleteFacility, setConfirmDeleteFacility] = useState<ApiFacility | null>(null)
     const [confirmDeleteUser, setConfirmDeleteUser] = useState<ApiUser | null>(null)
+    const [resetPasswordUser, setResetPasswordUser] = useState<ApiUser | null>(null)
     const [saving, setSaving] = useState(false)
     const [deletingFacilityId, setDeletingFacilityId] = useState<string | null>(null)
     const [reactivatingFacilityId, setReactivatingFacilityId] = useState<string | null>(null)
@@ -73,6 +96,12 @@ export default function SysAdminDashboard() {
     const [toasts, setToasts] = useState<ToastItem[]>([])
     const [uploadingFacilityImage, setUploadingFacilityImage] = useState<'new' | 'edit' | null>(null)
     const [uploadingUserImage, setUploadingUserImage] = useState(false)
+    const [resettingUserPassword, setResettingUserPassword] = useState(false)
+    const [resetPasswordError, setResetPasswordError] = useState('')
+    const [resetPasswordForm, setResetPasswordForm] = useState({
+        password: '',
+        confirmPassword: '',
+    })
     const [newFacility, setNewFacility] = useState({
         name: '',
         type: 'general_hospital' as 'health_center' | 'primary_hospital' | 'general_hospital' | 'specialized_hospital',
@@ -102,6 +131,7 @@ export default function SysAdminDashboard() {
     const [userSortKey, setUserSortKey] = useState<UserSortKey>('fullName')
     const [userSortDirection, setUserSortDirection] = useState<SortDirection>('asc')
     const [auditSearch, setAuditSearch] = useState('')
+    const [verifyingAuditChain, setVerifyingAuditChain] = useState(false)
     const [facilities, setFacilities] = useState<ApiFacility[]>([])
     const [departments, setDepartments] = useState<Department[]>([])
     const [loadingDepartments, setLoadingDepartments] = useState(false)
@@ -109,7 +139,9 @@ export default function SysAdminDashboard() {
     const [users, setUsers] = useState<ApiUser[]>([])
     const [loading, setLoading] = useState(true)
     const [reportPeriod, setReportPeriod] = useState(new Date().toISOString().slice(0, 7))
+    const [reportPriority, setReportPriority] = useState<'' | 'routine' | 'urgent' | 'emergency'>('')
     const [reportLoading, setReportLoading] = useState(false)
+    const [systemReportRows, setSystemReportRows] = useState<SystemReportRow[]>([])
     const [backendReportSummary, setBackendReportSummary] = useState<BackendReportSummary>({
         totalFacilities: 0,
         totalReferrals: 0,
@@ -318,6 +350,34 @@ export default function SysAdminDashboard() {
         }
     }
 
+    const handleVerifyAuditChain = async () => {
+        try {
+            setVerifyingAuditChain(true)
+            const result: AuditChainVerificationResult = await trmsApi.verifyAuditChain()
+            if (result.valid) {
+                showNotice({
+                    type: 'success',
+                    message: `Audit chain verified. Checked ${result.checkedEntries} entries with no breaks.`,
+                })
+                return
+            }
+
+            const brokenCount = result.brokenEntryIds.length
+            const sample = result.brokenEntryIds.slice(0, 3).join(', ')
+            showNotice({
+                type: 'error',
+                message: `Audit chain check found ${brokenCount} broken entries (checked ${result.checkedEntries}).${sample ? ` Sample IDs: ${sample}` : ''}`,
+            })
+        } catch (error: any) {
+            showNotice({
+                type: 'error',
+                message: error?.message || 'Failed to verify audit chain.',
+            })
+        } finally {
+            setVerifyingAuditChain(false)
+        }
+    }
+
     const handleSaveUser = async () => {
         if (!editingUser) return
 
@@ -340,13 +400,59 @@ export default function SysAdminDashboard() {
         }
     }
 
+    const openResetPasswordModal = (targetUser: ApiUser) => {
+        setResetPasswordUser(targetUser)
+        setResetPasswordError('')
+        setResetPasswordForm({
+            password: '',
+            confirmPassword: '',
+        })
+    }
+
+    const handleResetUserPassword = async () => {
+        if (!resetPasswordUser) return
+        const password = resetPasswordForm.password.trim()
+        const confirmPassword = resetPasswordForm.confirmPassword.trim()
+
+        if (!password) {
+            setResetPasswordError('Temporary password is required.')
+            return
+        }
+        if (password.length < 8) {
+            setResetPasswordError('Temporary password must be at least 8 characters.')
+            return
+        }
+        if (password !== confirmPassword) {
+            setResetPasswordError('Passwords do not match.')
+            return
+        }
+
+        try {
+            setResettingUserPassword(true)
+            setResetPasswordError('')
+            await trmsApi.updateUser(resetPasswordUser.id, { password })
+            setResetPasswordUser(null)
+            setResetPasswordForm({ password: '', confirmPassword: '' })
+            showNotice({
+                type: 'success',
+                message: `Password reset for "${resetPasswordUser.fullName}". User must change it on next login.`,
+            })
+            await loadAdminData()
+        } catch (error: any) {
+            setResetPasswordError(error?.message || 'Failed to reset password.')
+        } finally {
+            setResettingUserPassword(false)
+        }
+    }
+
     const handleCreateUser = async () => {
+        const requiresDepartment = newUser.role !== 'facility_admin'
         const errors: Partial<Record<'fullName' | 'username' | 'role' | 'facilityId' | 'departmentId' | 'initialPassword', string>> = {}
         if (!newUser.fullName.trim()) errors.fullName = 'Full name is required.'
         if (!newUser.username.trim()) errors.username = 'Username is required.'
         if (!newUser.role) errors.role = 'Role is required.'
         if (!newUser.facilityId) errors.facilityId = 'Facility is required.'
-        if (!newUser.departmentId) errors.departmentId = 'Department is required.'
+        if (requiresDepartment && !newUser.departmentId) errors.departmentId = 'Department is required for this role.'
         if (!newUser.initialPassword.trim()) errors.initialPassword = 'Initial password is required.'
         setNewUserErrors(errors)
 
@@ -362,7 +468,7 @@ export default function SysAdminDashboard() {
                 username: newUser.username.trim(),
                 role: newUser.role,
                 facilityId: newUser.facilityId,
-                departmentId: newUser.departmentId,
+                departmentId: requiresDepartment ? newUser.departmentId : undefined,
                 initialPassword: newUser.initialPassword,
                 profileImageUrl: newUser.profileImageUrl || undefined,
             })
@@ -428,9 +534,18 @@ export default function SysAdminDashboard() {
         ? isDark ? 'bg-primary-500/15 text-primary-400' : 'bg-primary-100 text-primary-700'
         : isDark ? 'text-surface-400 hover:text-surface-200' : 'text-surface-500 hover:text-surface-700'
     }`
-    const activeFacilities = facilities.filter((facility) => (facility as any).active !== false)
-    const inactiveFacilities = facilities.filter((facility) => (facility as any).active === false)
-    const visibleFacilities = showInactiveFacilities ? inactiveFacilities : activeFacilities
+    const activeFacilities = useMemo(
+        () => facilities.filter((facility) => (facility as any).active !== false),
+        [facilities],
+    )
+    const inactiveFacilities = useMemo(
+        () => facilities.filter((facility) => (facility as any).active === false),
+        [facilities],
+    )
+    const visibleFacilities = useMemo(
+        () => (showInactiveFacilities ? inactiveFacilities : activeFacilities),
+        [showInactiveFacilities, inactiveFacilities, activeFacilities],
+    )
     const facilityNameById = useMemo(
         () =>
             facilities.reduce<Record<string, string>>((acc, facility) => {
@@ -439,25 +554,33 @@ export default function SysAdminDashboard() {
             }, {}),
         [facilities],
     )
-    const filteredFacilities = visibleFacilities.filter((facility) => {
-        const q = facilitySearch.trim().toLowerCase()
-        if (!q) return true
-        return (
-            facility.name.toLowerCase().includes(q) ||
-            String(facility.location || '').toLowerCase().includes(q) ||
-            String(facility.type || '').toLowerCase().includes(q)
-        )
-    })
-    const filteredUsers = users.filter((u) => {
-        const q = userSearch.trim().toLowerCase()
-        if (!q) return true
-        return (
-            u.fullName.toLowerCase().includes(q) ||
-            u.username.toLowerCase().includes(q) ||
-            String(u.role).toLowerCase().includes(q) ||
-            String(u.facilityId || '').toLowerCase().includes(q)
-        )
-    })
+    const filteredFacilities = useMemo(
+        () =>
+            visibleFacilities.filter((facility) => {
+                const q = facilitySearch.trim().toLowerCase()
+                if (!q) return true
+                return (
+                    facility.name.toLowerCase().includes(q) ||
+                    String(facility.location || '').toLowerCase().includes(q) ||
+                    String(facility.type || '').toLowerCase().includes(q)
+                )
+            }),
+        [visibleFacilities, facilitySearch],
+    )
+    const filteredUsers = useMemo(
+        () =>
+            users.filter((u) => {
+                const q = userSearch.trim().toLowerCase()
+                if (!q) return true
+                return (
+                    u.fullName.toLowerCase().includes(q) ||
+                    u.username.toLowerCase().includes(q) ||
+                    String(u.role).toLowerCase().includes(q) ||
+                    String(u.facilityId || '').toLowerCase().includes(q)
+                )
+            }),
+        [users, userSearch],
+    )
 
     useEffect(() => {
         setFacilityPage(1)
@@ -565,7 +688,11 @@ export default function SysAdminDashboard() {
         }
     }, [userPage, userTotalPages])
 
-    const loadReportSummary = async (period: string, facilityList: ApiFacility[]) => {
+    const loadReportSummary = async (
+        period: string,
+        facilityList: ApiFacility[],
+        priority?: 'routine' | 'urgent' | 'emergency',
+    ) => {
         if (facilityList.length === 0) {
             setBackendReportSummary({
                 totalFacilities: 0,
@@ -575,6 +702,7 @@ export default function SysAdminDashboard() {
                 completed: 0,
                 pending: 0,
             })
+            setSystemReportRows([])
             return
         }
 
@@ -583,26 +711,43 @@ export default function SysAdminDashboard() {
             const reportRows = await Promise.all(
                 facilityList.map((facility) =>
                     trmsApi.getReport({
-                        month: period,
+                        period,
                         facilityId: facility.id,
+                        priority,
                     }),
                 ),
             )
 
-            const summary = reportRows.reduce(
-                (acc, row: any) => {
-                    const sent = Number(row?.sent ?? 0)
-                    const accepted = Number(row?.accepted ?? 0)
-                    const rejected = Number(row?.rejected ?? 0)
-                    const completed = Number(row?.completed ?? 0)
-                    const forwarded = Number(row?.forwarded ?? 0)
-                    const pending = Math.max(0, sent - accepted - rejected - completed - forwarded)
+            const rows: SystemReportRow[] = facilityList.map((facility, index) => {
+                const row: any = reportRows[index]
+                const sent = Number(row?.sent ?? 0)
+                const accepted = Number(row?.accepted ?? 0)
+                const rejected = Number(row?.rejected ?? 0)
+                const completed = Number(row?.completed ?? 0)
+                const forwarded = Number(row?.forwarded ?? 0)
+                return {
+                    facilityId: facility.id,
+                    facilityName: facility.name,
+                    period,
+                    priority: priority || 'all',
+                    sent,
+                    received: Number(row?.received ?? 0),
+                    accepted,
+                    rejected,
+                    forwarded,
+                    completed,
+                    pending: Math.max(0, sent - accepted - rejected - completed - forwarded),
+                }
+            })
+            setSystemReportRows(rows)
 
-                    acc.totalReferrals += sent
-                    acc.accepted += accepted
-                    acc.rejected += rejected
-                    acc.completed += completed
-                    acc.pending += pending
+            const summary = rows.reduce(
+                (acc, row) => {
+                    acc.totalReferrals += row.sent
+                    acc.accepted += row.accepted
+                    acc.rejected += row.rejected
+                    acc.completed += row.completed
+                    acc.pending += row.pending
                     return acc
                 },
                 {
@@ -617,6 +762,7 @@ export default function SysAdminDashboard() {
 
             setBackendReportSummary(summary)
         } catch (error: any) {
+            setSystemReportRows([])
             showNotice({ type: 'error', message: error?.message || 'Failed to load report summary.' })
         } finally {
             setReportLoading(false)
@@ -625,21 +771,54 @@ export default function SysAdminDashboard() {
 
     useEffect(() => {
         if (tab !== 'reports') return
-        void loadReportSummary(reportPeriod, activeFacilities)
-    }, [tab, reportPeriod, activeFacilities.length])
+        void loadReportSummary(reportPeriod, activeFacilities, reportPriority || undefined)
+    }, [tab, reportPeriod, reportPriority, activeFacilities])
 
     const handleExportCSV = () => {
-        const rows = [
-            ['Facility', 'Location', 'Type', 'Services', 'Last Sync'],
-            ...activeFacilities.map(f => [f.name, f.location, f.type, f.services?.length || 0, 'N/A'])
-        ]
-        const csv = rows.map(r => r.join(',')).join('\n')
-        const blob = new Blob([csv], { type: 'text/csv' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url; a.download = `system-report-${new Date().toISOString().split('T')[0]}.csv`; a.click()
-        URL.revokeObjectURL(url)
+        try {
+            if (systemReportRows.length === 0) {
+                showNotice({ type: 'error', message: 'No report rows to export for the selected filters.' })
+                return
+            }
+            const rows = [
+                ['Facility ID', 'Facility Name', 'Period', 'Priority', 'Sent', 'Received', 'Accepted', 'Rejected', 'Forwarded', 'Completed', 'Pending'],
+                ...systemReportRows.map((row) => [
+                    row.facilityId,
+                    row.facilityName,
+                    row.period,
+                    row.priority,
+                    row.sent,
+                    row.received,
+                    row.accepted,
+                    row.rejected,
+                    row.forwarded,
+                    row.completed,
+                    row.pending,
+                ]),
+            ]
+            const csv = rows.map(r => r.join(',')).join('\n')
+            const blob = new Blob([csv], { type: 'text/csv' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url; a.download = `system-report-${new Date().toISOString().split('T')[0]}.csv`; a.click()
+            URL.revokeObjectURL(url)
+            showNotice({ type: 'success', message: 'Report export completed.' })
+        } catch (error: any) {
+            showNotice({ type: 'error', message: error?.message || 'Report export failed.' })
+        }
     }
+
+    const hasSystemReportData = Object.values(backendReportSummary).some((value) => Number(value) > 0)
+    const sysAdminChartData = [
+        { label: 'Facilities', value: facilities.length, colorClass: 'bg-primary-600' },
+        { label: 'Users', value: users.length, colorClass: 'bg-emerald-500' },
+        { label: 'Audit Logs', value: auditLogs.length, colorClass: 'bg-amber-500' },
+        {
+            label: 'Inactive Facilities',
+            value: facilities.filter((facility) => (facility as any).active === false).length,
+            colorClass: 'bg-red-500',
+        },
+    ]
 
     return (
         <div className="space-y-6 animate-fade-in">
@@ -666,6 +845,8 @@ export default function SysAdminDashboard() {
                     </button>
                 </div>
             </div>
+
+            <DashboardMiniChart title="System Overview Snapshot" data={sysAdminChartData} />
 
             {/* ── FACILITIES TAB ──────────────────────────────────────────── */}
             {tab === 'facilities' && (
@@ -917,6 +1098,13 @@ export default function SysAdminDashboard() {
                                                         <IconEdit size={15} />
                                                     </button>
                                                     <button
+                                                        onClick={() => openResetPasswordModal(u)}
+                                                        className={`w-8 h-8 rounded-lg transition-colors flex items-center justify-center ${isDark ? 'hover:bg-surface-800 text-surface-400' : 'hover:bg-surface-100 text-surface-500'}`}
+                                                        title="Reset password"
+                                                    >
+                                                        <IconKey size={15} />
+                                                    </button>
+                                                    <button
                                                         onClick={() => setConfirmDeleteUser(u)}
                                                         disabled={deletingUserId === u.id}
                                                         className="w-8 h-8 rounded-lg transition-colors hover:bg-red-500/10 text-red-400 flex items-center justify-center disabled:opacity-60"
@@ -968,15 +1156,24 @@ export default function SysAdminDashboard() {
                             <IconShield size={14} className="text-primary-400" />
                             {t('sa.auditLogs')}
                         </h3>
-                        <div className="relative">
-                            <IconSearch size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-surface-400" />
-                            <input
-                                type="text"
-                                placeholder="Search logs..."
-                                value={auditSearch}
-                                onChange={e => setAuditSearch(e.target.value)}
-                                className={`pl-8 pr-3 py-1.5 rounded-lg text-xs border outline-none ${isDark ? 'bg-surface-950 border-surface-800 text-surface-100 focus:border-primary-400' : 'bg-surface-50 border-surface-200 focus:border-primary-500'}`}
-                            />
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => void handleVerifyAuditChain()}
+                                disabled={verifyingAuditChain}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-60 ${isDark ? 'border-surface-700 text-surface-300 hover:bg-surface-800' : 'border-surface-300 text-surface-700 hover:bg-surface-100'}`}
+                            >
+                                {verifyingAuditChain ? 'Verifying...' : 'Verify Audit Chain'}
+                            </button>
+                            <div className="relative">
+                                <IconSearch size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-surface-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Search logs..."
+                                    value={auditSearch}
+                                    onChange={e => setAuditSearch(e.target.value)}
+                                    className={`pl-8 pr-3 py-1.5 rounded-lg text-xs border outline-none ${isDark ? 'bg-surface-950 border-surface-800 text-surface-100 focus:border-primary-400' : 'bg-surface-50 border-surface-200 focus:border-primary-500'}`}
+                                />
+                            </div>
                         </div>
                     </div>
                     {loading ? (
@@ -1023,7 +1220,7 @@ export default function SysAdminDashboard() {
             {tab === 'reports' && (
                 <div className={card}>
                     <div className="flex items-center justify-between mb-5">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-wrap">
                             <h3 className="text-sm font-bold">System-wide Report</h3>
                             <input
                                 type="month"
@@ -1031,10 +1228,34 @@ export default function SysAdminDashboard() {
                                 onChange={(e) => setReportPeriod(e.target.value)}
                                 className={`px-2.5 py-1.5 rounded-lg text-xs border outline-none ${isDark ? 'bg-surface-950 border-surface-800 text-surface-100 focus:border-primary-400' : 'bg-surface-50 border-surface-200 focus:border-primary-500'}`}
                             />
+                            <select
+                                value={reportPriority}
+                                onChange={(e) => setReportPriority(e.target.value as typeof reportPriority)}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs border outline-none ${isDark ? 'bg-surface-950 border-surface-800 text-surface-100 focus:border-primary-400' : 'bg-surface-50 border-surface-200 focus:border-primary-500'}`}
+                            >
+                                <option value="">All Priorities</option>
+                                <option value="routine">Routine</option>
+                                <option value="urgent">Urgent</option>
+                                <option value="emergency">Emergency</option>
+                            </select>
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    onClick={() => setReportPeriod(monthOffsetValue(0))}
+                                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors ${isDark ? 'border-surface-700 text-surface-300 hover:bg-surface-800' : 'border-surface-300 text-surface-700 hover:bg-surface-100'}`}
+                                >
+                                    This Month
+                                </button>
+                                <button
+                                    onClick={() => setReportPeriod(monthOffsetValue(-1))}
+                                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors ${isDark ? 'border-surface-700 text-surface-300 hover:bg-surface-800' : 'border-surface-300 text-surface-700 hover:bg-surface-100'}`}
+                                >
+                                    Last Month
+                                </button>
+                            </div>
                         </div>
                         <div className="flex items-center gap-2">
                             <button
-                                onClick={() => loadReportSummary(reportPeriod, activeFacilities)}
+                                onClick={() => loadReportSummary(reportPeriod, activeFacilities, reportPriority || undefined)}
                                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${isDark ? 'border-surface-700 text-surface-300 hover:bg-surface-800' : 'border-surface-300 text-surface-700 hover:bg-surface-100'}`}
                             >
                                 Refresh
@@ -1046,6 +1267,14 @@ export default function SysAdminDashboard() {
                     </div>
                     {reportLoading ? (
                         <p className="text-sm text-surface-500">Loading backend report summary...</p>
+                    ) : activeFacilities.length === 0 ? (
+                        <div className={`rounded-xl border p-4 text-sm ${isDark ? 'border-surface-800 bg-surface-950 text-surface-300' : 'border-surface-200 bg-surface-50 text-surface-600'}`}>
+                            No active facilities found. Add or reactivate facilities to generate report results.
+                        </div>
+                    ) : !hasSystemReportData ? (
+                        <div className={`rounded-xl border p-4 text-sm ${isDark ? 'border-surface-800 bg-surface-950 text-surface-300' : 'border-surface-200 bg-surface-50 text-surface-600'}`}>
+                            No report data for <strong>{reportPeriod}</strong>{reportPriority ? ` with ${reportPriority} priority` : ''}. Try another month, priority, or refresh after new activity.
+                        </div>
                     ) : (
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                         {Object.entries(backendReportSummary).map(([key, val]) => (
@@ -1231,8 +1460,13 @@ export default function SysAdminDashboard() {
                             required
                             value={newUser.role}
                             onChange={(e) => {
-                                setNewUser((current) => ({ ...current, role: e.target.value as ApiUserRole }))
-                                setNewUserErrors((current) => ({ ...current, role: undefined }))
+                                const nextRole = e.target.value as ApiUserRole
+                                setNewUser((current) => ({
+                                    ...current,
+                                    role: nextRole,
+                                    departmentId: nextRole === 'facility_admin' ? '' : current.departmentId,
+                                }))
+                                setNewUserErrors((current) => ({ ...current, role: undefined, departmentId: undefined }))
                             }}
                             error={newUserErrors.role}
                             options={[
@@ -1269,7 +1503,7 @@ export default function SysAdminDashboard() {
                         <FormField
                             label="Department"
                             as="select"
-                            required
+                            required={newUser.role !== 'facility_admin'}
                             value={newUser.departmentId}
                             onChange={(e) => {
                                 setNewUser((current) => ({ ...current, departmentId: e.target.value }))
@@ -1277,6 +1511,8 @@ export default function SysAdminDashboard() {
                             }}
                             error={newUserErrors.departmentId}
                             options={departments.map((department) => ({ value: department.id, label: department.name }))}
+                            disabled={newUser.role === 'facility_admin'}
+                            hint={newUser.role === 'facility_admin' ? 'Facility administrators can be created without assigning a department.' : undefined}
                         />
                         {loadingDepartments && (
                             <p className="text-[11px] text-surface-500">Loading departments...</p>
@@ -1403,6 +1639,75 @@ export default function SysAdminDashboard() {
                             </button>
                         </div>
                     </div>
+                </Modal>
+            )}
+
+            {/* Reset User Password Modal */}
+            {resetPasswordUser && (
+                <Modal
+                    title="Reset User Password"
+                    icon={<div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-primary-500/20' : 'bg-primary-100'}`}><IconKey size={14} className={isDark ? 'text-primary-300' : 'text-primary-600'} /></div>}
+                    onClose={() => {
+                        setResetPasswordUser(null)
+                        setResetPasswordError('')
+                        setResetPasswordForm({ password: '', confirmPassword: '' })
+                    }}
+                    maxWidth="max-w-md"
+                >
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault()
+                            void handleResetUserPassword()
+                        }}
+                        className="space-y-4"
+                    >
+                        <p className={`text-sm ${isDark ? 'text-surface-300' : 'text-surface-700'}`}>
+                            Set a temporary password for <strong>{resetPasswordUser.fullName}</strong>.
+                        </p>
+                        <FormField
+                            label="Temporary Password"
+                            type="password"
+                            required
+                            value={resetPasswordForm.password}
+                            onChange={(e) => {
+                                setResetPasswordForm((current) => ({ ...current, password: e.target.value }))
+                                setResetPasswordError('')
+                            }}
+                        />
+                        <FormField
+                            label="Confirm Password"
+                            type="password"
+                            required
+                            value={resetPasswordForm.confirmPassword}
+                            onChange={(e) => {
+                                setResetPasswordForm((current) => ({ ...current, confirmPassword: e.target.value }))
+                                setResetPasswordError('')
+                            }}
+                        />
+                        {resetPasswordError && (
+                            <p className="text-xs text-red-500 font-medium">{resetPasswordError}</p>
+                        )}
+                        <div className="flex gap-3">
+                            <button
+                                type="submit"
+                                disabled={resettingUserPassword}
+                                className="flex-1 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold hover:bg-primary-600 transition-colors disabled:opacity-60"
+                            >
+                                {resettingUserPassword ? 'Resetting...' : 'Reset Password'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setResetPasswordUser(null)
+                                    setResetPasswordError('')
+                                    setResetPasswordForm({ password: '', confirmPassword: '' })
+                                }}
+                                className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}
+                            >
+                                {t('common.cancel')}
+                            </button>
+                        </div>
+                    </form>
                 </Modal>
             )}
 
