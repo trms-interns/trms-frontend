@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useLanguage } from "../../context/LanguageContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
+import { useReferrals } from "../../context/ReferralContext";
 import { mockFacilities } from "../../data/mockData";
-import { trmsApi, type ApiFacility } from "../../lib/trmsApi";
+import { trmsApi, type ApiFacility, type Department } from "../../lib/trmsApi";
 import { buildCreateReferralPayload } from "../../lib/trmsApi";
 import FormField from "../../components/FormField";
 import {
@@ -19,6 +21,8 @@ interface FormState {
   gender: string;
   phone: string;
   receivingFacility: string;
+  receivingDepartmentId: string;
+  serviceType: string;
   priority: string;
   reasonForReferral: string;
   clinicalSummary: string;
@@ -37,6 +41,8 @@ const emptyForm: FormState = {
   gender: "",
   phone: "",
   receivingFacility: "",
+  receivingDepartmentId: "",
+  serviceType: "",
   priority: "",
   reasonForReferral: "",
   clinicalSummary: "",
@@ -69,9 +75,12 @@ function mapMockFacilitiesToApiFacilities(data: typeof mockFacilities): ApiFacil
 }
 
 export default function CreateReferral() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { t } = useLanguage();
   const { isDark } = useTheme();
   const { user } = useAuth();
+  const { referrals, refreshReferrals } = useReferrals();
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<
     Partial<Record<keyof FormState, string>>
@@ -82,8 +91,22 @@ export default function CreateReferral() {
     typeof buildCreateReferralPayload
   > | null>(null);
   const [createdReferralId, setCreatedReferralId] = useState("");
+  const [submittedStatus, setSubmittedStatus] = useState<"draft" | "pending">(
+    "pending",
+  );
   const [facilities, setFacilities] = useState<ApiFacility[]>([]);
+  const [receivingDepartments, setReceivingDepartments] = useState<Department[]>(
+    [],
+  );
+  const [loadingDepartments, setLoadingDepartments] = useState(false);
   const [loadingFacilities, setLoadingFacilities] = useState(true);
+  const [editPrefilled, setEditPrefilled] = useState(false);
+
+  const editReferralId = searchParams.get("editReferralId")?.trim() || "";
+  const isEditMode = Boolean(editReferralId);
+  const editReferral = isEditMode
+    ? referrals.find((referral) => referral.id === editReferralId)
+    : null;
 
   useEffect(() => {
     const fetchFacilities = async () => {
@@ -95,9 +118,35 @@ export default function CreateReferral() {
 
       try {
         const data = await trmsApi.getFacilities();
-        setFacilities(data);
+        const normalizedFacilities = (Array.isArray(data) ? data : []).map(
+          (facility) => ({
+            ...facility,
+            id: facility?.id || "",
+            name: facility?.name || "Unknown Facility",
+            location: facility?.location || "Unknown location",
+            services: Array.isArray(facility?.services) ? facility.services : [],
+          }),
+        );
+
+        const facilitiesWithServices = await Promise.all(
+          normalizedFacilities.map(async (facility) => {
+            if (!facility.id) return facility;
+            try {
+              const services = await trmsApi.getFacilityServices(facility.id);
+              return {
+                ...facility,
+                services: Array.isArray(services) ? services : [],
+              };
+            } catch {
+              return facility;
+            }
+          }),
+        );
+
+        setFacilities(facilitiesWithServices);
       } catch (error) {
         console.error('Failed to fetch facilities:', error);
+        setFacilities(mapMockFacilitiesToApiFacilities(mockFacilities));
       } finally {
         setLoadingFacilities(false);
       }
@@ -119,6 +168,106 @@ export default function CreateReferral() {
   const selectedFacility = facilities.find(
     (f) => f.id === form.receivingFacility,
   );
+  const selectedService = selectedFacility?.services?.find(
+    (service) => service.serviceType === form.serviceType,
+  );
+  const isOwnFacilitySelected = Boolean(
+    selectedFacility &&
+      ((user?.facilityId && selectedFacility.id === user.facilityId) ||
+        selectedFacility.name === user?.facility),
+  );
+
+  useEffect(() => {
+    const loadDepartments = async () => {
+      if (!form.receivingFacility) {
+        setReceivingDepartments([]);
+        return;
+      }
+
+      if (!ENABLE_API_REFERRALS) {
+        const mockDepartments =
+          selectedFacility?.services?.map(
+            (service) =>
+              ({
+                id: service.id,
+                name: service.serviceType,
+                facilityId: form.receivingFacility,
+              }) as Department,
+          ) || [];
+        setReceivingDepartments(mockDepartments);
+        return;
+      }
+
+      try {
+        setLoadingDepartments(true);
+        const data = await trmsApi.getDepartments(form.receivingFacility);
+        const activeDepartments = data.filter(
+          (department) => department.active !== false,
+        );
+
+        if (activeDepartments.length > 0) {
+          setReceivingDepartments(activeDepartments);
+          return;
+        }
+
+        // Fallback: if department records are not configured yet, derive options from services.
+        const serviceBackedDepartments =
+          selectedFacility?.services?.map(
+            (service) =>
+              ({
+                id: service.id,
+                name: service.serviceType,
+                facilityId: form.receivingFacility,
+              }) as Department,
+          ) || [];
+        setReceivingDepartments(serviceBackedDepartments);
+      } catch (error) {
+        console.error("Failed to fetch departments:", error);
+        const serviceBackedDepartments =
+          selectedFacility?.services?.map(
+            (service) =>
+              ({
+                id: service.id,
+                name: service.serviceType,
+                facilityId: form.receivingFacility,
+              }) as Department,
+          ) || [];
+        setReceivingDepartments(serviceBackedDepartments);
+      } finally {
+        setLoadingDepartments(false);
+      }
+    };
+
+    void loadDepartments();
+  }, [form.receivingFacility, selectedFacility]);
+
+  useEffect(() => {
+    if (!isEditMode || editPrefilled || !editReferral) return;
+
+    setForm({
+      patientName: editReferral.patientName || "",
+      dateOfBirth: editReferral.dateOfBirth || "",
+      gender: editReferral.sex || "",
+      phone: editReferral.phone || "",
+      receivingFacility: editReferral.receivingFacilityId || "",
+      receivingDepartmentId: editReferral.receivingDepartmentId || "",
+      // Service type is not reliably stored in current referral payloads.
+      serviceType: editReferral.department || "",
+      priority: editReferral.priority || "",
+      reasonForReferral:
+        editReferral.reasonForReferral || editReferral.chiefComplaint || "",
+      clinicalSummary: editReferral.clinicalSummary || "",
+      primaryDiagnosis: editReferral.primaryDiagnosis || "",
+      treatmentGiven: editReferral.treatmentGiven || "",
+      vitalSigns: editReferral.vitalSigns || "",
+      allergies: editReferral.allergies || "",
+      pastMedicalHistory: editReferral.pastMedicalHistory || "",
+      currentMedications: editReferral.currentMedications || "",
+      consent: true,
+    });
+    setStep(2);
+    setEditPrefilled(true);
+  }, [editPrefilled, editReferral, isEditMode]);
 
   const validate = (): boolean => {
     const e: Partial<Record<keyof FormState, string>> = {};
@@ -129,6 +278,17 @@ export default function CreateReferral() {
       e.phone = "Phone number must be in the format +251912345678.";
     }
     if (!form.receivingFacility) e.receivingFacility = t("common.required");
+    if (isOwnFacilitySelected) {
+      e.receivingFacility =
+        "Receiving facility cannot be your own facility. Please choose another facility.";
+    }
+    if (!form.receivingDepartmentId)
+      e.receivingDepartmentId = t("common.required");
+    if (!form.serviceType.trim()) e.serviceType = t("common.required");
+    if (selectedService?.status === "unavailable") {
+      e.serviceType =
+        "Selected service is unavailable at this facility. Choose another service.";
+    }
     if (!form.priority) e.priority = t("common.required");
     if (!form.reasonForReferral.trim())
       e.reasonForReferral = t("common.required");
@@ -155,14 +315,26 @@ export default function CreateReferral() {
     return Object.keys(stepOneErrors).length === 0;
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (mode: "draft" | "pending") => {
     if (!validate()) return;
-    const payload = buildCreateReferralPayload(form);
+    const payload = {
+      ...buildCreateReferralPayload(form),
+      status: mode,
+    };
     setQueuedPayload(payload);
     
     try {
       const response = await trmsApi.createReferral(payload);
+      if (isEditMode && editReferralId) {
+        try {
+          await trmsApi.removeReferral(editReferralId);
+        } catch (deleteError) {
+          console.error("Failed to delete replaced referral:", deleteError);
+        }
+      }
       setCreatedReferralId(response.id);
+      setSubmittedStatus(mode);
+      await refreshReferrals();
       setSubmitted(true);
     } catch (error) {
       console.error('Failed to create referral:', error);
@@ -176,12 +348,15 @@ export default function CreateReferral() {
         <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 flex items-center justify-center mb-4">
           <IconCircleCheck size={32} className="text-emerald-500" />
         </div>
-        <h2 className="text-xl font-bold mb-2">{t("cr.saved")}</h2>
+        <h2 className="text-xl font-bold mb-2">
+          {isEditMode ? "Referral Updated" : t("cr.saved")}
+        </h2>
         <p
           className={`text-sm text-center max-w-md ${isDark ? "text-surface-400" : "text-surface-500"}`}
         >
-          Referral for <strong>{form.patientName}</strong> has been saved with
-          status <strong>PENDING</strong>. It will be synced to{" "}
+          Referral for <strong>{form.patientName}</strong> has been{" "}
+          {isEditMode ? "updated" : "saved"} with status{" "}
+          <strong>{submittedStatus.toUpperCase()}</strong>. It will be synced to{" "}
           {selectedFacility?.name || "the receiving facility"} when connectivity
           is available.
         </p>
@@ -225,6 +400,10 @@ export default function CreateReferral() {
             setCreatedReferralId("");
             setSubmitted(false);
             setStep(1);
+            setEditPrefilled(false);
+            if (isEditMode) {
+              navigate("/referrals/new", { replace: true });
+            }
           }}
           className="mt-6 px-5 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold hover:bg-primary-600 transition-colors"
         >
@@ -245,6 +424,20 @@ export default function CreateReferral() {
         >
           Referring from: <strong>{user?.facility}</strong> · {user?.name}
         </p>
+        {isEditMode && (
+          <p
+            className={`text-xs mt-2 ${isDark ? "text-amber-400" : "text-amber-700"}`}
+          >
+            Editing referral <strong>{editReferralId}</strong>. Saving will create
+            an updated referral and remove the original.
+          </p>
+        )}
+        {isEditMode && !editReferral && (
+          <p className="text-xs mt-2 text-red-500">
+            Could not load the selected referral for editing. You can still create
+            a new referral.
+          </p>
+        )}
       </div>
 
       {/* Step indicator */}
@@ -370,17 +563,60 @@ export default function CreateReferral() {
                 required
                 as="select"
                 value={form.receivingFacility}
+                onChange={(e) => {
+                  const value = (e.target as HTMLSelectElement).value;
+                  setForm((prev) => ({
+                    ...prev,
+                    receivingFacility: value,
+                    receivingDepartmentId: "",
+                    serviceType: "",
+                  }));
+                  setErrors((prev) => {
+                    const next = { ...prev };
+                    delete next.receivingFacility;
+                    delete next.receivingDepartmentId;
+                    delete next.serviceType;
+                    return next;
+                  });
+                }}
+                error={errors.receivingFacility}
+                options={facilities
+                  .filter(
+                    (f) =>
+                      !(
+                        (user?.facilityId && f.id === user.facilityId) ||
+                        f.name === user?.facility
+                      ),
+                  )
+                  .map((f) => ({
+                  value: f.id,
+                  label: `${f.name || "Unknown Facility"} (${f.location || "Unknown location"})`,
+                }))}
+              />
+              <FormField
+                label="Receiving Department"
+                required
+                as="select"
+                value={form.receivingDepartmentId}
                 onChange={(e) =>
                   set(
-                    "receivingFacility",
+                    "receivingDepartmentId",
                     (e.target as HTMLSelectElement).value,
                   )
                 }
-                error={errors.receivingFacility}
-                options={facilities.map((f) => ({
-                  value: f.id,
-                  label: `${f.name} (${f.location || "Unknown location"})`,
+                error={errors.receivingDepartmentId}
+                options={receivingDepartments.map((department) => ({
+                  value: department.id,
+                  label: department.name,
                 }))}
+                hint={
+                  !form.receivingFacility
+                    ? "Choose a receiving facility first."
+                    : receivingDepartments.length > 0
+                      ? "Choose the destination department."
+                      : "No departments found for this facility yet."
+                }
+                disabled={!form.receivingFacility}
               />
               {loadingFacilities && (
                 <p
@@ -389,6 +625,36 @@ export default function CreateReferral() {
                   Loading facilities...
                 </p>
               )}
+              {loadingDepartments && (
+                <p
+                  className={`text-[11px] ${isDark ? "text-surface-500" : "text-surface-500"}`}
+                >
+                  Loading departments...
+                </p>
+              )}
+              <FormField
+                label="Service Type"
+                required
+                as="select"
+                value={form.serviceType}
+                onChange={(e) =>
+                  set("serviceType", (e.target as HTMLSelectElement).value)
+                }
+                error={errors.serviceType}
+                options={(selectedFacility?.services || []).map((service) => ({
+                  value: service.serviceType,
+                  label:
+                    service.status === "limited" &&
+                    typeof service.estimatedDelayDays === "number"
+                      ? `${service.serviceType} (limited, ${service.estimatedDelayDays}d delay)`
+                      : `${service.serviceType} (${service.status})`,
+                }))}
+                hint={
+                  selectedFacility
+                    ? "Select the requested clinical service."
+                    : "Choose a receiving facility first."
+                }
+              />
               <FormField
                 label={t("ref.priority")}
                 required
@@ -443,6 +709,11 @@ export default function CreateReferral() {
                     <IconAlertTriangle size={12} /> Some services are
                     unavailable at this facility. You may proceed or choose
                     another.
+                  </p>
+                )}
+                {selectedService?.status === "unavailable" && (
+                  <p className="text-[11px] text-red-500 font-medium mt-2 flex items-center gap-1">
+                    <IconAlertTriangle size={12} /> Selected service is unavailable.
                   </p>
                 )}
               </div>
@@ -582,10 +853,17 @@ export default function CreateReferral() {
                 ← Back
               </button>
               <button
-                onClick={handleSubmit}
+                onClick={() => handleSubmit("draft")}
+                className={`px-5 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? "border-surface-600 text-surface-300 hover:bg-surface-800" : "border-surface-300 text-surface-700 hover:bg-surface-100"} transition-colors`}
+              >
+                {isEditMode ? "Save Update as Draft" : "Save as Draft"}
+              </button>
+              <button
+                onClick={() => handleSubmit("pending")}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold hover:bg-primary-600 transition-colors"
               >
-                <IconSend size={14} /> {t("cr.submit")}
+                <IconSend size={14} />{" "}
+                {isEditMode ? "Save Update as Pending" : "Submit as Pending"}
               </button>
             </div>
           </div>
