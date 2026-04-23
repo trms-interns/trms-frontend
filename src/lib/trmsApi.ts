@@ -80,15 +80,19 @@ export interface CreateReferralRequest {
     patientGender: ApiPatientGender
     patientPhone?: string
     receivingFacilityId: string
+    receivingDepartmentId?: string
+    serviceType?: string
     priority: ApiReferralPriority
     clinicalSummary: string
     primaryDiagnosis: string
     treatmentGiven?: string
     reason: string
     consentGiven: boolean
+    vitalSigns?: string
     allergies?: string
     pastMedicalHistory?: string
     currentMedications?: string
+    status?: 'draft' | 'pending'
 }
 
 export interface CreateReferralFormValues {
@@ -97,10 +101,13 @@ export interface CreateReferralFormValues {
     gender: string
     phone: string
     receivingFacility: string
+    receivingDepartmentId: string
+    serviceType: string
     priority: string
     clinicalSummary: string
     primaryDiagnosis: string
     treatmentGiven: string
+    vitalSigns: string
     reasonForReferral: string
     consent: boolean
     allergies: string
@@ -156,10 +163,13 @@ export function buildCreateReferralPayload(form: CreateReferralFormValues): Crea
         patientGender: normalizePatientGender(form.gender),
         patientPhone: form.phone.trim() || undefined,
         receivingFacilityId: form.receivingFacility,
+        receivingDepartmentId: form.receivingDepartmentId || undefined,
+        serviceType: form.serviceType.trim() || undefined,
         priority: normalizePriority(form.priority),
         clinicalSummary: form.clinicalSummary.trim(),
         primaryDiagnosis: form.primaryDiagnosis.trim(),
         treatmentGiven: form.treatmentGiven.trim() || undefined,
+        vitalSigns: form.vitalSigns.trim() || undefined,
         reason: form.reasonForReferral.trim(),
         consentGiven: form.consent,
         allergies: form.allergies.trim() || undefined,
@@ -205,14 +215,16 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
 // Token management
 function getAuthToken(): string | null {
-    return localStorage.getItem('trms-token')
+    return sessionStorage.getItem('trms-token')
 }
 
 function setAuthToken(token: string) {
-    localStorage.setItem('trms-token', token)
+    sessionStorage.setItem('trms-token', token)
 }
 
 function clearAuthToken() {
+    sessionStorage.removeItem('trms-token')
+    // Backward compatibility cleanup if an old session used localStorage.
     localStorage.removeItem('trms-token')
 }
 
@@ -239,11 +251,14 @@ export interface PasswordChangeRequest {
 export interface CreateUserRequest {
     fullName: string
     role: ApiUserRole
-    departmentId: string
+    departmentId?: string
     facilityId: string
     initialPassword: string
     username?: string
     profileImageUrl?: string
+    email?: string
+    phone?: string
+    birthDate?: string
 }
 
 export interface UpdateUserRequest {
@@ -314,12 +329,31 @@ export interface CreateServiceRequest {
     estimatedDelayDays?: number
 }
 
+export interface ReportQueryParams {
+    facilityId?: string
+    period?: string
+    month?: string
+    priority?: ApiReferralPriority
+}
+
+export interface ExportReportQueryParams extends ReportQueryParams {
+    format: 'csv' | 'pdf'
+}
+
 export interface ApiReferral {
     id: string
     patient: any
     referringFacilityId: string
     referringUserId: string
     receivingFacilityId: string
+    receivingDepartmentId?: string
+    referringFacility?: { id: string; name?: string }
+    receivingFacility?: { id: string; name?: string }
+    receivingDepartment?: { id: string; name?: string }
+    referringUser?: ApiReferralUserSummary
+    acceptedByUser?: ApiReferralUserSummary
+    rejectedByUser?: ApiReferralUserSummary
+    clinicianAcceptedByUser?: ApiReferralUserSummary
     priority: ApiReferralPriority
     clinicalSummary: string
     primaryDiagnosis: string
@@ -334,11 +368,28 @@ export interface ApiReferral {
     waitingTime?: string
     rejectionReason?: string
     acceptedAt?: string
+    acceptedByUserId?: string
+    rejectedByUserId?: string
     forwardingNote?: string
     forwardedFromReferralId?: string
     appointmentDate?: string
+    clinicianAcceptedAt?: string
+    clinicianAcceptedByUserId?: string
     consentRecord?: any
     dischargeSummary?: any
+}
+
+export interface ApiReferralUserSummary {
+    id: string
+    username?: string
+    fullName?: string
+    role?: string
+    phone?: string | null
+    email?: string | null
+    facilityId?: string | null
+    facilityName?: string | null
+    departmentId?: string | null
+    departmentName?: string | null
 }
 
 export interface AcceptReferralRequest {
@@ -358,6 +409,18 @@ export interface ForwardReferralRequest {
     status: 'FORWARDED'
     newReceivingFacilityId: string
     forwardingNote: string
+}
+
+export interface SubmitReferralRequest {
+    status: 'PENDING'
+}
+
+export interface RouteReferralRequest {
+    receivingFacilityId: string
+}
+
+export interface AssignDepartmentRequest {
+    departmentId: string
 }
 
 export interface CreateDischargeSummaryRequest {
@@ -401,6 +464,29 @@ export interface SyncUpdatesResponse {
         facilities: ApiFacility[]
         services: ApiService[]
     }
+}
+
+export interface SyncRequestPayload {
+    syncVersion?: number
+    clientRequestId?: string
+    deviceId?: string
+    retryCount?: number
+    since?: string
+    lastSyncAt?: string
+    pullLimit?: number
+    syncCursor?: {
+        anchorTime?: string
+        referrals?: { updatedAt?: string; id?: string }
+        facilities?: { updatedAt?: string; id?: string }
+        services?: { updatedAt?: string; id?: string }
+    }
+    pushedReferrals?: Array<unknown>
+}
+
+export interface AuditChainVerificationResult {
+    valid: boolean
+    checkedEntries: number
+    brokenEntryIds: string[]
 }
 
 export const trmsApi = {
@@ -447,8 +533,12 @@ export const trmsApi = {
     },
 
     // User management
-    getUsers(facilityId?: string) {
-        const params = facilityId ? `?facilityId=${facilityId}` : ''
+    getUsers(facilityId?: string, departmentId?: string) {
+        const query = new URLSearchParams()
+        if (facilityId) query.set('facilityId', facilityId)
+        if (departmentId) query.set('departmentId', departmentId)
+        const queryString = query.toString()
+        const params = queryString ? `?${queryString}` : ''
         return apiRequest<ApiUser[]>(`/users${params}`, {
             headers: getAuthHeaders(),
         })
@@ -625,7 +715,7 @@ export const trmsApi = {
         })
     },
 
-    updateReferral(referralId: string, payload: AcceptReferralRequest | RejectReferralRequest | ForwardReferralRequest) {
+    updateReferral(referralId: string, payload: AcceptReferralRequest | RejectReferralRequest | ForwardReferralRequest | SubmitReferralRequest) {
         return apiRequest<ApiReferral>(`/referrals/${referralId}`, {
             method: 'PATCH',
             headers: getAuthHeaders(),
@@ -645,6 +735,75 @@ export const trmsApi = {
         return this.updateReferral(referralId, { ...payload, status: 'FORWARDED' })
     },
 
+    submitReferral(referralId: string) {
+        return this.updateReferral(referralId, { status: 'PENDING' })
+    },
+
+    cancelReferral(referralId: string) {
+        return apiRequest<ApiReferral>(`/referrals/${referralId}/cancel`, {
+            method: 'PATCH',
+            headers: getAuthHeaders(),
+        })
+    },
+
+    deleteReferral(referralId: string) {
+        return apiRequest<void>(`/referrals/${referralId}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        })
+    },
+
+    async removeReferral(referralId: string) {
+        try {
+            await this.deleteReferral(referralId)
+            return
+        } catch (error) {
+            if (
+                error instanceof TrmsApiError &&
+                error.status !== 404 &&
+                error.status !== 405
+            ) {
+                throw error
+            }
+        }
+
+        try {
+            await this.cancelReferral(referralId)
+        } catch (error) {
+            if (
+                error instanceof TrmsApiError &&
+                (error.status === 404 || error.status === 405)
+            ) {
+                // Treat as success: referral is already gone or cancel route is unsupported.
+                return
+            }
+            throw error
+        }
+    },
+
+    routeReferral(referralId: string, payload: RouteReferralRequest) {
+        return apiRequest<ApiReferral>(`/referrals/${referralId}/route`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(payload),
+        })
+    },
+
+    assignReferralDepartment(referralId: string, payload: AssignDepartmentRequest) {
+        return apiRequest<ApiReferral>(`/referrals/${referralId}/assign`, {
+            method: 'PATCH',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(payload),
+        })
+    },
+
+    clinicianAcceptReferral(referralId: string) {
+        return apiRequest<ApiReferral>(`/referrals/${referralId}/clinician-accept`, {
+            method: 'PATCH',
+            headers: getAuthHeaders(),
+        })
+    },
+
     addDischargeSummary(referralId: string, payload: CreateDischargeSummaryRequest) {
         return apiRequest<DischargeSummary>(`/referrals/${referralId}/discharge`, {
             method: 'POST',
@@ -660,10 +819,11 @@ export const trmsApi = {
         })
     },
 
-    pushUnsyncedReferrals() {
-        return apiRequest<ApiReferral[]>('/referrals/sync', {
+    pushUnsyncedReferrals(payload: SyncRequestPayload) {
+        return apiRequest<SyncUpdatesResponse>('/referrals/sync', {
             method: 'POST',
             headers: getAuthHeaders(),
+            body: JSON.stringify(payload),
         })
     },
 
@@ -682,15 +842,26 @@ export const trmsApi = {
     },
 
     // Reports
-    getReport(params: { month: string; facilityId?: string }) {
-        const queryString = '?' + new URLSearchParams(params as any).toString()
+    getReport(params: ReportQueryParams) {
+        const query = new URLSearchParams()
+        if (params.facilityId) query.set('facilityId', params.facilityId)
+        if (params.period) query.set('period', params.period)
+        if (params.month) query.set('month', params.month)
+        if (params.priority) query.set('priority', params.priority)
+        const queryString = query.toString() ? `?${query.toString()}` : ''
         return apiRequest<any>(`/reports${queryString}`, {
             headers: getAuthHeaders(),
         })
     },
 
-    async exportReport(params: { month: string; facilityId?: string; format: 'csv' | 'pdf' }) {
-        const queryString = '?' + new URLSearchParams(params as any).toString()
+    async exportReport(params: ExportReportQueryParams) {
+        const query = new URLSearchParams()
+        if (params.facilityId) query.set('facilityId', params.facilityId)
+        if (params.period) query.set('period', params.period)
+        if (params.month) query.set('month', params.month)
+        if (params.priority) query.set('priority', params.priority)
+        query.set('format', params.format)
+        const queryString = query.toString() ? `?${query.toString()}` : ''
         const response = await fetch(`${API_BASE_URL}/reports/export${queryString}`, {
             headers: {
                 ...getAuthHeaders(),
@@ -717,6 +888,12 @@ export const trmsApi = {
     getAuditLogs(userId?: string) {
         const params = userId ? `?userId=${userId}` : ''
         return apiRequest<any[]>(`/audit-logs${params}`, {
+            headers: getAuthHeaders(),
+        })
+    },
+
+    verifyAuditChain() {
+        return apiRequest<AuditChainVerificationResult>('/audit-logs/verify', {
             headers: getAuthHeaders(),
         })
     },
