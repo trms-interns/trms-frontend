@@ -3,7 +3,6 @@ import { Routes, Route, NavLink, useLocation, useNavigate, Navigate } from "reac
 import { useTheme } from "./context/ThemeContext";
 import { useLanguage } from "./context/LanguageContext";
 import { useAuth } from "./context/AuthContext";
-import type { UserRole } from "./data/mockData";
 import {
   IconLayoutDashboard,
   IconBuilding,
@@ -41,7 +40,12 @@ import DeptHeadDashboard from "./features/dept-head/DeptHeadDashboard";
 import FacilityAdminDashboard from "./features/facility-admin/FacilityAdminDashboard";
 import SysAdminDashboard from "./features/sys-admin/SysAdminDashboard";
 import Profile from "./features/profile/Profile";
-import { getUserInitials, trmsApi, type Notification } from "./lib/trmsApi";
+import {
+  getUserInitials,
+  trmsApi,
+  type AppUserRole as UserRole,
+  type Notification,
+} from "./lib/trmsApi";
 import Modal from "./components/Modal";
 
 // ─── Role-based navigation definitions ──────────────────────────────────────

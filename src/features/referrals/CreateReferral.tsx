@@ -4,7 +4,6 @@ import { useLanguage } from "../../context/LanguageContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
 import { useReferrals } from "../../context/ReferralContext";
-import { mockFacilities } from "../../data/mockData";
 import { trmsApi, type ApiFacility, type Department } from "../../lib/trmsApi";
 import { buildCreateReferralPayload } from "../../lib/trmsApi";
 import FormField from "../../components/FormField";
@@ -56,23 +55,6 @@ const emptyForm: FormState = {
 };
 
 const ETHIOPIAN_PHONE_REGEX = /^\+251\d{9}$/;
-const ENABLE_API_REFERRALS = import.meta.env.VITE_ENABLE_API_AUTH === "true";
-
-function mapMockFacilitiesToApiFacilities(data: typeof mockFacilities): ApiFacility[] {
-  return data.map((facility) => ({
-    id: facility.id,
-    name: facility.name,
-    type: "general_hospital",
-    location: facility.location,
-    contact: facility.contact,
-    services: facility.departments.map((department) => ({
-      id: department.id,
-      serviceType: department.name,
-      status: department.status,
-      estimatedDelayDays: department.estimatedDelayDays,
-    })),
-  }));
-}
 
 export default function CreateReferral() {
   const navigate = useNavigate();
@@ -110,12 +92,6 @@ export default function CreateReferral() {
 
   useEffect(() => {
     const fetchFacilities = async () => {
-      if (!ENABLE_API_REFERRALS) {
-        setFacilities(mapMockFacilitiesToApiFacilities(mockFacilities));
-        setLoadingFacilities(false);
-        return;
-      }
-
       try {
         const data = await trmsApi.getFacilities();
         const normalizedFacilities = (Array.isArray(data) ? data : []).map(
@@ -146,7 +122,7 @@ export default function CreateReferral() {
         setFacilities(facilitiesWithServices);
       } catch (error) {
         console.error('Failed to fetch facilities:', error);
-        setFacilities(mapMockFacilitiesToApiFacilities(mockFacilities));
+        setFacilities([]);
       } finally {
         setLoadingFacilities(false);
       }
@@ -181,20 +157,6 @@ export default function CreateReferral() {
     const loadDepartments = async () => {
       if (!form.receivingFacility) {
         setReceivingDepartments([]);
-        return;
-      }
-
-      if (!ENABLE_API_REFERRALS) {
-        const mockDepartments =
-          selectedFacility?.services?.map(
-            (service) =>
-              ({
-                id: service.id,
-                name: service.serviceType,
-                facilityId: form.receivingFacility,
-              }) as Department,
-          ) || [];
-        setReceivingDepartments(mockDepartments);
         return;
       }
 

@@ -5,7 +5,6 @@ import { useAuth } from '../../context/AuthContext'
 import { useReferrals } from '../../context/ReferralContext'
 import { trmsApi, type ApiFacility, type Department } from '../../lib/trmsApi'
 import StatusBadge from '../../components/StatusBadge'
-import { mockTriageActions } from '../../data/mockData'
 import {
     IconCircleCheck,
     IconCircleX,
@@ -77,9 +76,7 @@ export default function Triage() {
     const { user } = useAuth()
     const { referrals, completeReferral, refreshReferrals } = useReferrals()
 
-    // TODO (Backend Team): Replace mockTriageActions with an API call to fetch recent chronological triage history
-    // E.g. GET /api/triage/actions
-    const [actions, setActions] = useState<TriageActionRecord[]>(mockTriageActions)
+    const [actions, setActions] = useState<TriageActionRecord[]>([])
     const [selectedRef, setSelectedRef] = useState<string | null>(null)
     const [resolvedReferrals, setResolvedReferrals] = useState<Record<string, 'accepted' | 'rejected' | 'redirected'>>({})
     const [feedback, setFeedback] = useState<ActionFeedback | null>(null)

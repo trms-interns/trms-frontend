@@ -1,12 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { trmsApi, type ApiReferral, type DischargeSummary as ApiDischargeSummary } from '../lib/trmsApi'
 import { useAuth } from './AuthContext'
-import {
-    mockDischargeSummaries,
-    mockReferrals,
-    type DischargeSummary,
-    type Referral,
-} from '../data/mockData'
+import type { DischargeSummary, Referral } from '../types/referrals'
 
 interface CompleteReferralInput {
     referralId: string
@@ -148,8 +143,8 @@ function apiDischargeSummaryToDischargeSummary(apiSummary: ApiDischargeSummary):
 
 export function ReferralProvider({ children }: { children: ReactNode }) {
     const { isAuthenticated } = useAuth()
-    const [referrals, setReferrals] = useState<Referral[]>(mockReferrals)
-    const [dischargeSummaries, setDischargeSummaries] = useState<DischargeSummary[]>(mockDischargeSummaries)
+    const [referrals, setReferrals] = useState<Referral[]>([])
+    const [dischargeSummaries, setDischargeSummaries] = useState<DischargeSummary[]>([])
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [isSyncing, setIsSyncing] = useState(false)
@@ -161,8 +156,8 @@ export function ReferralProvider({ children }: { children: ReactNode }) {
     const refreshReferrals = async () => {
         const hasApiSession = isAuthenticated && Boolean(trmsApi.getToken())
         if (!hasApiSession) {
-            setReferrals(mockReferrals)
-            setDischargeSummaries(mockDischargeSummaries)
+            setReferrals([])
+            setDischargeSummaries([])
             return
         }
 

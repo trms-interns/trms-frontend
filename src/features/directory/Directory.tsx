@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLanguage } from "../../context/LanguageContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
-import { mockFacilities } from "../../data/mockData";
 import {
   trmsApi,
   type ApiFacility,
@@ -18,26 +17,6 @@ import {
 } from "@tabler/icons-react";
 
 type ServiceStatus = "available" | "limited" | "unavailable";
-
-const ENABLE_API_REFERRALS = import.meta.env.VITE_ENABLE_API_AUTH === "true";
-
-function mapMockFacilitiesToApiFacilities(
-  data: typeof mockFacilities,
-): ApiFacility[] {
-  return data.map((facility) => ({
-    id: facility.id,
-    name: facility.name,
-    type: "general_hospital",
-    location: facility.location,
-    contact: facility.contact,
-    services: facility.departments.map((department) => ({
-      id: department.id,
-      serviceType: department.name,
-      status: department.status,
-      estimatedDelayDays: department.estimatedDelayDays,
-    })),
-  }));
-}
 
 function StatusPill({ status }: { status: ServiceStatus }) {
   const config: Record<ServiceStatus, { label: string; cls: string }> = {
@@ -82,12 +61,6 @@ export default function Directory() {
     const load = async () => {
       setLoading(true);
       setError(null);
-
-      if (!ENABLE_API_REFERRALS) {
-        setFacilities(mapMockFacilitiesToApiFacilities(mockFacilities));
-        setLoading(false);
-        return;
-      }
 
       try {
         const facilitiesData = await trmsApi.getFacilities();
