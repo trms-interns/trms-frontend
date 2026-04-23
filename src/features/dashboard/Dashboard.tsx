@@ -5,6 +5,7 @@ import { useTheme } from "../../context/ThemeContext";
 import { useReferrals } from "../../context/ReferralContext";
 import StatCard from "../../components/StatCard";
 import StatusBadge from "../../components/StatusBadge";
+import DashboardMiniChart from "../../components/DashboardMiniChart";
 import {
   IconFileText,
   IconClock,
@@ -12,19 +13,23 @@ import {
   IconCircleCheck,
   IconBuilding,
   IconChartBar,
+  IconRefresh,
 } from "@tabler/icons-react";
 
 export default function Dashboard() {
   const { t } = useLanguage();
   const { isDark } = useTheme();
-  const { referrals, loading } = useReferrals();
+  const { referrals, loading, syncNow, isSyncing, lastSyncedAt, syncError } =
+    useReferrals();
 
   // Get recent referrals
   const recentRefs = referrals.slice(0, 5);
 
   // Calculate stats from real referral data
   const totalReferrals = referrals.length;
-  const pendingSync = referrals.filter(r => ['pending', 'synced'].includes(r.status)).length;
+  const pendingSync = referrals.filter((r) =>
+    ["draft", "pending", "pending_routing"].includes(r.status),
+  ).length;
   const activeTriage = referrals.filter(r => r.status === 'pending').length;
   const completedToday = referrals.filter(r => r.status === 'completed').length;
 
@@ -47,6 +52,13 @@ export default function Dashboard() {
       to: "/analytics",
       color: "from-purple-500 to-purple-700",
     },
+  ];
+
+  const statusChartData = [
+    { label: "Pending", value: referrals.filter((r) => r.status === "pending").length, colorClass: "bg-amber-500" },
+    { label: "Accepted", value: referrals.filter((r) => r.status === "accepted").length, colorClass: "bg-emerald-500" },
+    { label: "Rejected", value: referrals.filter((r) => r.status === "rejected").length, colorClass: "bg-red-500" },
+    { label: "Completed", value: referrals.filter((r) => r.status === "completed").length, colorClass: "bg-primary-600" },
   ];
 
   return (
@@ -106,9 +118,35 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
+
+        {/* Sync status */}
+        <div
+          className={`rounded-2xl p-5 border ${isDark ? "bg-surface-800/60 border-surface-700/50" : "bg-white border-surface-200"}`}
+        >
+          <h3 className="text-sm font-semibold mb-3">Sync Status</h3>
+          <p className="text-xs text-surface-500">
+            {lastSyncedAt
+              ? `Last synced: ${new Date(lastSyncedAt).toLocaleString()}`
+              : "Last synced: never"}
+          </p>
+          <p className="text-xs text-surface-500 mt-1">
+            Pending local changes: {pendingSync}
+          </p>
+          {syncError && <p className="text-xs text-red-500 mt-2">{syncError}</p>}
+          <button
+            onClick={() => void syncNow()}
+            disabled={isSyncing}
+            className="mt-4 inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold bg-primary-700 text-white hover:bg-primary-600 disabled:opacity-60 transition-colors"
+          >
+            <IconRefresh size={14} />
+            {isSyncing ? "Syncing..." : "Sync now"}
+          </button>
+        </div>
       </div>
 
       {/* Recent activity */}
+      <DashboardMiniChart title="Referral Status Overview" data={statusChartData} />
+
       <div
         className={`rounded-2xl p-5 border ${isDark ? "bg-surface-800/60 border-surface-700/50" : "bg-white border-surface-200"}`}
       >
