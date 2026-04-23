@@ -19,19 +19,35 @@ export default function Analytics() {
     const { referrals } = useReferrals()
     const [auditLogs, setAuditLogs] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
+    const [auditOffset, setAuditOffset] = useState(0)
+    const [hasMoreAuditLogs, setHasMoreAuditLogs] = useState(true)
+
+    const fetchAuditLogs = async (reset = false) => {
+        if (!reset && !hasMoreAuditLogs) return
+        if (!reset && loading) return
+
+        try {
+            if (reset) setLoading(true)
+            const currentOffset = reset ? 0 : auditOffset
+            const data = await trmsApi.getAuditLogs(undefined, 10, currentOffset)
+            
+            if (reset) {
+                setAuditLogs(data)
+            } else {
+                setAuditLogs(prev => [...prev, ...data])
+            }
+            
+            setAuditOffset(currentOffset + data.length)
+            setHasMoreAuditLogs(data.length === 10)
+        } catch (error) {
+            console.error('Failed to fetch audit logs:', error)
+        } finally {
+            setLoading(false)
+        }
+    }
 
     useEffect(() => {
-        const fetchAuditLogs = async () => {
-            try {
-                const data = await trmsApi.getAuditLogs()
-                setAuditLogs(data)
-            } catch (error) {
-                console.error('Failed to fetch audit logs:', error)
-            } finally {
-                setLoading(false)
-            }
-        }
-        fetchAuditLogs()
+        void fetchAuditLogs(true)
     }, [])
 
     // Calculate stats from real referral data
@@ -58,12 +74,12 @@ export default function Analytics() {
                     <IconShield size={14} className="text-primary-400" />
                     {t('ana.complianceAudit')}
                 </h3>
-                {loading ? (
+                {loading && auditLogs.length === 0 ? (
                     <p className="text-sm text-surface-500">Loading audit logs...</p>
                 ) : auditLogs.length === 0 ? (
                     <p className="text-sm text-surface-500">No audit logs found</p>
                 ) : (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto flex flex-col gap-4">
                         <table className="w-full text-xs">
                             <thead>
                                 <tr className={`border-b ${isDark ? 'border-surface-700' : 'border-surface-200'}`}>
@@ -74,23 +90,34 @@ export default function Analytics() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {auditLogs.slice(0, 10).map((entry) => (
+                                {auditLogs.map((entry) => (
                                     <tr key={entry.id} className={`border-b last:border-0 ${isDark ? 'border-surface-700/50' : 'border-surface-100'}`}>
                                         <td className="py-2.5">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-6 h-6 rounded-full bg-primary-500/15 flex items-center justify-center">
                                                     <IconUser size={10} className="text-primary-400" />
                                                 </div>
-                                                <span className="font-medium">{entry.user}</span>
+                                                <span className="font-medium">{entry.user || entry.userId || 'Unknown'}</span>
                                             </div>
                                         </td>
                                         <td className="py-2.5 text-surface-400">{entry.action}</td>
-                                        <td className="py-2.5"><code className={`px-1.5 py-0.5 rounded text-[10px] ${isDark ? 'bg-surface-700' : 'bg-surface-100'}`}>{entry.recordId}</code></td>
-                                        <td className="py-2.5 text-surface-500">{entry.timestamp}</td>
+                                        <td className="py-2.5"><code className={`px-1.5 py-0.5 rounded text-[10px] ${isDark ? 'bg-surface-700' : 'bg-surface-100'}`}>{entry.recordId || entry.targetId || '—'}</code></td>
+                                        <td className="py-2.5 text-surface-500">{entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '—'}</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
+                        {hasMoreAuditLogs && (
+                            <div className="flex justify-center mt-2">
+                                <button 
+                                    onClick={() => void fetchAuditLogs()} 
+                                    disabled={loading && auditLogs.length > 0}
+                                    className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-60 ${isDark ? 'border-surface-700 text-surface-300 hover:bg-surface-800' : 'border-surface-300 text-surface-700 hover:bg-surface-100'}`}
+                                >
+                                    {loading && auditLogs.length > 0 ? 'Loading...' : 'Load More Logs'}
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

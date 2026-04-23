@@ -136,6 +136,9 @@ export default function SysAdminDashboard() {
     const [departments, setDepartments] = useState<Department[]>([])
     const [loadingDepartments, setLoadingDepartments] = useState(false)
     const [auditLogs, setAuditLogs] = useState<any[]>([])
+    const [auditLoading, setAuditLoading] = useState(false)
+    const [auditOffset, setAuditOffset] = useState(0)
+    const [hasMoreAuditLogs, setHasMoreAuditLogs] = useState(true)
     const [users, setUsers] = useState<ApiUser[]>([])
     const [loading, setLoading] = useState(true)
     const [reportPeriod, setReportPeriod] = useState(new Date().toISOString().slice(0, 7))
@@ -166,13 +169,11 @@ export default function SysAdminDashboard() {
     const loadAdminData = async () => {
         setLoading(true)
         try {
-            const [facilitiesData, auditData, usersData] = await Promise.all([
+            const [facilitiesData, usersData] = await Promise.all([
                 trmsApi.getFacilities(),
-                trmsApi.getAuditLogs(),
                 trmsApi.getUsers(),
             ])
             setFacilities(facilitiesData)
-            setAuditLogs(auditData)
             setUsers(usersData)
         } catch (error) {
             console.error('Failed to fetch admin data:', error)
@@ -182,8 +183,33 @@ export default function SysAdminDashboard() {
         }
     }
 
+    const loadMoreAuditLogs = async (reset = false) => {
+        if (!reset && !hasMoreAuditLogs) return
+        if (auditLoading) return
+
+        try {
+            setAuditLoading(true)
+            const currentOffset = reset ? 0 : auditOffset
+            const data = await trmsApi.getAuditLogs(undefined, 10, currentOffset)
+            
+            if (reset) {
+                setAuditLogs(data)
+            } else {
+                setAuditLogs(prev => [...prev, ...data])
+            }
+            
+            setAuditOffset(currentOffset + data.length)
+            setHasMoreAuditLogs(data.length === 10)
+        } catch (error: any) {
+            showNotice({ type: 'error', message: error?.message || 'Failed to fetch audit logs.' })
+        } finally {
+            setAuditLoading(false)
+        }
+    }
+
     useEffect(() => {
         loadAdminData()
+        void loadMoreAuditLogs(true)
     }, [])
 
     const handleDeleteFacility = async (facility: ApiFacility) => {
@@ -1176,12 +1202,12 @@ export default function SysAdminDashboard() {
                             </div>
                         </div>
                     </div>
-                    {loading ? (
+                    {auditLogs.length === 0 && auditLoading ? (
                         <p className="text-sm text-surface-500">Loading audit logs...</p>
                     ) : filteredAudit.length === 0 ? (
                         <p className="text-sm text-surface-500">No audit logs found</p>
                     ) : (
-                        <div className="overflow-x-auto">
+                        <div className="overflow-x-auto flex flex-col gap-4">
                             <table className="w-full text-xs">
                                 <thead>
                                     <tr className={`border-b ${isDark ? 'border-surface-700' : 'border-surface-200'}`}>
@@ -1211,6 +1237,17 @@ export default function SysAdminDashboard() {
                                     ))}
                                 </tbody>
                             </table>
+                            {hasMoreAuditLogs && (
+                                <div className="flex justify-center mt-2">
+                                    <button 
+                                        onClick={() => void loadMoreAuditLogs()} 
+                                        disabled={auditLoading}
+                                        className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-60 ${isDark ? 'border-surface-700 text-surface-300 hover:bg-surface-800' : 'border-surface-300 text-surface-700 hover:bg-surface-100'}`}
+                                    >
+                                        {auditLoading ? 'Loading...' : 'Load More Logs'}
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

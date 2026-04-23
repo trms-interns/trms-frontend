@@ -885,8 +885,13 @@ export const trmsApi = {
     },
 
     // Audit logs
-    getAuditLogs(userId?: string) {
-        const params = userId ? `?userId=${userId}` : ''
+    getAuditLogs(userId?: string, limit?: number, offset?: number) {
+        const query = new URLSearchParams()
+        if (userId) query.set('userId', userId)
+        if (limit !== undefined) query.set('limit', limit.toString())
+        if (offset !== undefined) query.set('offset', offset.toString())
+        const queryString = query.toString()
+        const params = queryString ? `?${queryString}` : ''
         return apiRequest<any[]>(`/audit-logs${params}`, {
             headers: getAuthHeaders(),
         })

@@ -97,6 +97,34 @@ const roleNavMap: Record<UserRole, NavItem[]> = {
   ],
 };
 
+// ─── Audio Context setup ───────────────────────────────────────────────────
+let globalAudioContext: AudioContext | null = null;
+
+function getAudioContext() {
+  if (globalAudioContext) return globalAudioContext;
+  try {
+    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioContextCtor) {
+      globalAudioContext = new AudioContextCtor();
+    }
+  } catch {
+    // Ignore
+  }
+  return globalAudioContext;
+}
+
+const resumeAudioContext = () => {
+  const ctx = getAudioContext();
+  if (ctx && ctx.state === "suspended") {
+    void ctx.resume();
+  }
+};
+
+if (typeof window !== "undefined") {
+  window.addEventListener("click", resumeAudioContext, { once: true });
+  window.addEventListener("keydown", resumeAudioContext, { once: true });
+}
+
 // ─── Role-based home page component ─────────────────────────────────────────
 
 function RoleHomePage({ role }: { role: UserRole }) {
@@ -142,24 +170,27 @@ export default function App() {
 
   const playNotificationSound = () => {
     try {
-      const AudioContextCtor =
-        window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioContextCtor) return;
-      const ctx = new AudioContextCtor();
+      const ctx = getAudioContext();
+      if (!ctx) return;
+      
+      if (ctx.state === "suspended") {
+        void ctx.resume();
+      }
+      
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = "sine";
-      osc.frequency.value = 880;
-      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1);
+      
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.05);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+      
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
-      osc.stop(ctx.currentTime + 0.23);
-      window.setTimeout(() => {
-        void ctx.close();
-      }, 350);
+      osc.stop(ctx.currentTime + 0.3);
     } catch {
       // Ignore playback errors caused by browser policies.
     }
@@ -174,6 +205,22 @@ export default function App() {
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
+      
+      const currentLatestId = sorted[0]?.id || null;
+
+      if (initializedNotificationsRef.current) {
+        if (
+          currentLatestId &&
+          currentLatestId !== latestNotificationIdRef.current &&
+          sorted.some((item) => !item.isRead)
+        ) {
+          playNotificationSound();
+        }
+      } else {
+        initializedNotificationsRef.current = true;
+      }
+
+      latestNotificationIdRef.current = currentLatestId;
       setNotifications(sorted);
     } catch (error: any) {
       setNotificationsError(
@@ -233,30 +280,8 @@ export default function App() {
     if (!isAuthenticated) {
       initializedNotificationsRef.current = false;
       latestNotificationIdRef.current = null;
-      return;
     }
-
-    if (notifications.length === 0) return;
-    const currentLatestId = notifications[0]?.id || null;
-    const previousLatestId = latestNotificationIdRef.current;
-
-    if (!initializedNotificationsRef.current) {
-      initializedNotificationsRef.current = true;
-      latestNotificationIdRef.current = currentLatestId;
-      return;
-    }
-
-    if (
-      currentLatestId &&
-      previousLatestId &&
-      currentLatestId !== previousLatestId &&
-      notifications.some((item) => !item.isRead)
-    ) {
-      playNotificationSound();
-    }
-
-    latestNotificationIdRef.current = currentLatestId;
-  }, [isAuthenticated, notifications]);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated) {
