@@ -3,7 +3,9 @@ import { useLanguage } from '../../context/LanguageContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useAuth } from '../../context/AuthContext'
 import { useReferrals } from '../../context/ReferralContext'
+import { trmsApi } from '../../lib/trmsApi'
 import StatusBadge from '../../components/StatusBadge'
+import DashboardMiniChart from '../../components/DashboardMiniChart'
 import {
     IconStethoscope,
     IconClipboardCheck,
@@ -17,26 +19,37 @@ export default function DoctorDashboard() {
     const { t } = useLanguage()
     const { isDark } = useTheme()
     const { user } = useAuth()
-    const { referrals, dischargeSummaries, completeReferral } = useReferrals()
+    const { referrals, dischargeSummaries, completeReferral, refreshReferrals } = useReferrals()
     const [activeReferralId, setActiveReferralId] = useState<string | null>(null)
     const [finalDiagnosis, setFinalDiagnosis] = useState('')
     const [treatmentSummary, setTreatmentSummary] = useState('')
     const [medicationsPrescribed, setMedicationsPrescribed] = useState('')
     const [followUpInstructions, setFollowUpInstructions] = useState('')
     const [dischargeDate, setDischargeDate] = useState(new Date().toISOString().slice(0, 10))
+    const [acceptingReferralId, setAcceptingReferralId] = useState<string | null>(null)
+    const [acceptError, setAcceptError] = useState('')
 
     // Filter referrals to doctor's department (accepted referrals needing attention)
-    const deptReferrals = referrals.filter(
-        r => r.department === user?.department && ['accepted', 'synced', 'pending'].includes(r.status)
-    )
+    const deptReferrals = referrals.filter((r) => {
+        const inMyDept = user?.departmentId
+            ? r.receivingDepartmentId === user.departmentId
+            : true
+        return inMyDept && ['accepted', 'pending', 'forwarded'].includes(r.status)
+    })
     const completedReferrals = referrals.filter(
-        r => r.department === user?.department && r.status === 'completed'
+        r => (user?.departmentId ? r.receivingDepartmentId === user.departmentId : true) && r.status === 'completed'
     )
 
     const card = `rounded-2xl border p-5 ${isDark ? 'bg-surface-900 border-surface-800' : 'bg-white border-surface-200'}`
     const inputCls = `w-full px-3 py-2.5 rounded-lg text-sm border outline-none transition-colors ${isDark ? 'bg-surface-950 border-surface-800 text-surface-100 placeholder-surface-500 focus:border-primary-400' : 'bg-surface-50 border-surface-200 text-surface-900 placeholder-surface-400 focus:border-primary-500'}`
     const textareaCls = `${inputCls} resize-none leading-relaxed`
     const activeReferral = deptReferrals.find(ref => ref.id === activeReferralId) || null
+    const doctorChartData = [
+        { label: 'Pending', value: deptReferrals.filter((r) => r.status === 'pending').length, colorClass: 'bg-amber-500' },
+        { label: 'Accepted', value: deptReferrals.filter((r) => r.status === 'accepted').length, colorClass: 'bg-emerald-500' },
+        { label: 'Forwarded', value: deptReferrals.filter((r) => r.status === 'forwarded').length, colorClass: 'bg-purple-500' },
+        { label: 'Completed', value: completedReferrals.length, colorClass: 'bg-primary-600' },
+    ]
 
     const openCompletionModal = (referralId: string) => {
         setActiveReferralId(referralId)
@@ -71,6 +84,19 @@ export default function DoctorDashboard() {
         closeCompletionModal()
     }
 
+    const handleClinicianAccept = async (referralId: string) => {
+        try {
+            setAcceptingReferralId(referralId)
+            setAcceptError('')
+            await trmsApi.clinicianAcceptReferral(referralId)
+            await refreshReferrals()
+        } catch (error: any) {
+            setAcceptError(error?.message || 'Failed to accept referral as clinician.')
+        } finally {
+            setAcceptingReferralId(null)
+        }
+    }
+
     return (
         <div className="space-y-6 animate-fade-in">
             <div className="flex items-center justify-between">
@@ -86,6 +112,9 @@ export default function DoctorDashboard() {
                     </span>
                 </div>
             </div>
+            {acceptError && <p className="text-xs text-red-500">{acceptError}</p>}
+
+            <DashboardMiniChart title="Department Referral Snapshot" data={doctorChartData} />
 
             {/* Active referrals for this department */}
             <div className={card}>
@@ -116,7 +145,16 @@ export default function DoctorDashboard() {
                                 </div>
                                 <StatusBadge type="priority" value={ref.priority} />
                                 <StatusBadge type="sync" value={ref.status} />
-                                {ref.status === 'accepted' && (
+                                {ref.status === 'accepted' && !ref.clinicianAcceptedAt && (
+                                    <button
+                                        onClick={() => handleClinicianAccept(ref.id)}
+                                        disabled={acceptingReferralId === ref.id}
+                                        className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${isDark ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'} disabled:opacity-60`}
+                                    >
+                                        {acceptingReferralId === ref.id ? 'Accepting...' : 'Accept Case'}
+                                    </button>
+                                )}
+                                {ref.status === 'accepted' && ref.clinicianAcceptedAt && (
                                     <button
                                         onClick={() => openCompletionModal(ref.id)}
                                         className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${isDark ? 'bg-primary-500/15 text-primary-300 hover:bg-primary-500/25' : 'bg-primary-100 text-primary-700 hover:bg-primary-200'}`}
