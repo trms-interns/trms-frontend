@@ -1,13 +1,12 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { trmsApi, type ApiReferral, type DischargeSummary as ApiDischargeSummary } from '../lib/trmsApi'
+import { useAuth } from './AuthContext'
 import {
     mockDischargeSummaries,
     mockReferrals,
     type DischargeSummary,
     type Referral,
 } from '../data/mockData'
-
-const ENABLE_API_REFERRALS = import.meta.env.VITE_ENABLE_API_AUTH === 'true'
 
 interface CompleteReferralInput {
     referralId: string
@@ -25,8 +24,12 @@ interface ReferralContextType {
     dischargeSummaries: DischargeSummary[]
     loading: boolean
     error: string | null
+    isSyncing: boolean
+    lastSyncedAt: string | null
+    syncError: string | null
     completeReferral: (input: CompleteReferralInput) => Promise<void>
     refreshReferrals: () => Promise<void>
+    syncNow: () => Promise<void>
 }
 
 const ReferralContext = createContext<ReferralContextType>({
@@ -34,11 +37,49 @@ const ReferralContext = createContext<ReferralContextType>({
     dischargeSummaries: [],
     loading: false,
     error: null,
+    isSyncing: false,
+    lastSyncedAt: null,
+    syncError: null,
     completeReferral: async () => {},
     refreshReferrals: async () => {},
+    syncNow: async () => {},
 })
 
-function apiReferralToReferral(apiReferral: ApiReferral): Referral {
+function resolveName(
+    id: string | null | undefined,
+    fallbackName: string | null | undefined,
+    map?: Record<string, string>,
+): string {
+    if (fallbackName && fallbackName.trim()) return fallbackName.trim()
+    if (id && map?.[id]) return map[id]
+    return id || 'Unknown'
+}
+
+function apiReferralToReferral(
+    apiReferral: ApiReferral,
+    nameMaps?: {
+        facilityNameById?: Record<string, string>
+        departmentNameById?: Record<string, string>
+    },
+): Referral {
+    const referringFacilityName = resolveName(
+        apiReferral.referringFacilityId,
+        apiReferral.referringFacility?.name,
+        nameMaps?.facilityNameById,
+    )
+    const receivingFacilityName = resolveName(
+        apiReferral.receivingFacilityId,
+        apiReferral.receivingFacility?.name,
+        nameMaps?.facilityNameById,
+    )
+    const receivingDepartmentName = apiReferral.receivingDepartmentId
+        ? resolveName(
+              apiReferral.receivingDepartmentId,
+              apiReferral.receivingDepartment?.name,
+              nameMaps?.departmentNameById,
+          )
+        : undefined
+
     return {
         id: apiReferral.id,
         patientId: apiReferral.patient?.id || 'UNKNOWN',
@@ -47,9 +88,18 @@ function apiReferralToReferral(apiReferral: ApiReferral): Referral {
         age: 0, // Would need to calculate from DOB
         sex: apiReferral.patient?.gender === 'male' ? 'Male' : 'Female',
         dateOfBirth: apiReferral.patient?.dateOfBirth,
-        referringFacility: apiReferral.referringFacilityId,
+        phone: apiReferral.patient?.phoneNumber || undefined,
+        referringFacilityId: apiReferral.referringFacilityId,
+        referringFacility: referringFacilityName,
         referringUserId: apiReferral.referringUserId,
-        receivingFacility: apiReferral.receivingFacilityId,
+        referringUserName: apiReferral.referringUser?.fullName || undefined,
+        referringUserDepartment: apiReferral.referringUser?.departmentName || undefined,
+        referringUserPhone: apiReferral.referringUser?.phone || undefined,
+        referringUserEmail: apiReferral.referringUser?.email || undefined,
+        receivingFacilityId: apiReferral.receivingFacilityId,
+        receivingFacility: receivingFacilityName,
+        receivingDepartmentId: apiReferral.receivingDepartmentId,
+        department: receivingDepartmentName,
         priority: apiReferral.priority === 'emergency' ? 'emergency' : apiReferral.priority === 'urgent' ? 'urgent' : 'routine',
         status: apiReferral.status as any,
         chiefComplaint: apiReferral.reasonForReferral,
@@ -64,6 +114,17 @@ function apiReferralToReferral(apiReferral: ApiReferral): Referral {
         hasImage: false,
         estimatedWaitingTime: apiReferral.waitingTime,
         appointmentDate: apiReferral.appointmentDate ? new Date(apiReferral.appointmentDate).toLocaleDateString() : undefined,
+        clinicianAcceptedAt: apiReferral.clinicianAcceptedAt,
+        acceptedByUserId: apiReferral.acceptedByUserId,
+        acceptedByUserName: apiReferral.acceptedByUser?.fullName || undefined,
+        acceptedByUserDepartment: apiReferral.acceptedByUser?.departmentName || undefined,
+        acceptedByUserPhone: apiReferral.acceptedByUser?.phone || undefined,
+        acceptedByUserEmail: apiReferral.acceptedByUser?.email || undefined,
+        rejectedByUserId: apiReferral.rejectedByUserId,
+        rejectedByUserName: apiReferral.rejectedByUser?.fullName || undefined,
+        rejectedByUserDepartment: apiReferral.rejectedByUser?.departmentName || undefined,
+        rejectedByUserPhone: apiReferral.rejectedByUser?.phone || undefined,
+        rejectedByUserEmail: apiReferral.rejectedByUser?.email || undefined,
         rejectionReason: apiReferral.rejectionReason,
         forwardingNote: apiReferral.forwardingNote,
     }
@@ -86,19 +147,57 @@ function apiDischargeSummaryToDischargeSummary(apiSummary: ApiDischargeSummary):
 }
 
 export function ReferralProvider({ children }: { children: ReactNode }) {
+    const { isAuthenticated } = useAuth()
     const [referrals, setReferrals] = useState<Referral[]>(mockReferrals)
     const [dischargeSummaries, setDischargeSummaries] = useState<DischargeSummary[]>(mockDischargeSummaries)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [isSyncing, setIsSyncing] = useState(false)
+    const [syncError, setSyncError] = useState<string | null>(null)
+    const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(
+        () => localStorage.getItem('trms-last-sync-at'),
+    )
 
     const refreshReferrals = async () => {
-        if (!ENABLE_API_REFERRALS) return
+        const hasApiSession = isAuthenticated && Boolean(trmsApi.getToken())
+        if (!hasApiSession) {
+            setReferrals(mockReferrals)
+            setDischargeSummaries(mockDischargeSummaries)
+            return
+        }
 
         setLoading(true)
         setError(null)
         try {
             const apiReferrals = await trmsApi.getReferrals()
-            const convertedReferrals = apiReferrals.map(apiReferralToReferral)
+
+            const facilityNameById: Record<string, string> = {}
+            const departmentNameById: Record<string, string> = {}
+
+            try {
+                const facilities = await trmsApi.getFacilities()
+                facilities.forEach((facility) => {
+                    facilityNameById[facility.id] = facility.name
+                })
+
+                const departmentLists = await Promise.all(
+                    facilities.map((facility) =>
+                        trmsApi.getDepartments(facility.id).catch(() => []),
+                    ),
+                )
+                departmentLists.flat().forEach((department) => {
+                    departmentNameById[department.id] = department.name
+                })
+            } catch {
+                // Best effort enrichment. If lookups fail, referrals still render with ids.
+            }
+
+            const convertedReferrals = apiReferrals.map((referral) =>
+                apiReferralToReferral(referral, {
+                    facilityNameById,
+                    departmentNameById,
+                }),
+            )
             setReferrals(convertedReferrals)
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch referrals')
@@ -109,13 +208,75 @@ export function ReferralProvider({ children }: { children: ReactNode }) {
     }
 
     useEffect(() => {
-        if (ENABLE_API_REFERRALS) {
-            refreshReferrals()
+        void refreshReferrals()
+    }, [isAuthenticated])
+
+  useEffect(() => {
+    const hasApiSession = isAuthenticated && Boolean(trmsApi.getToken())
+    if (!hasApiSession) return
+
+    const timer = window.setInterval(() => {
+      void refreshReferrals()
+    }, 10000)
+
+    const refreshOnFocus = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshReferrals()
+      }
+    }
+
+    window.addEventListener('focus', refreshOnFocus)
+    document.addEventListener('visibilitychange', refreshOnFocus)
+
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refreshOnFocus)
+      document.removeEventListener('visibilitychange', refreshOnFocus)
+    }
+  }, [isAuthenticated])
+
+    const syncNow = async () => {
+        const hasApiSession = isAuthenticated && Boolean(trmsApi.getToken())
+        if (!hasApiSession) return
+
+        const baseCursor = lastSyncedAt || new Date(0).toISOString()
+        const existingDeviceId = localStorage.getItem('trms-device-id')
+        const deviceId =
+            existingDeviceId ||
+            `web-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`
+        localStorage.setItem('trms-device-id', deviceId)
+
+        try {
+            setIsSyncing(true)
+            setSyncError(null)
+            const response = await trmsApi.pushUnsyncedReferrals({
+                syncVersion: 1,
+                clientRequestId: `sync-${Date.now().toString(36)}`,
+                deviceId,
+                retryCount: 0,
+                lastSyncAt: baseCursor,
+                pullLimit: 200,
+                pushedReferrals: [],
+            })
+
+            const nextSyncAt =
+                response.syncCursor?.nextSince ||
+                response.syncCursor?.serverTime ||
+                new Date().toISOString()
+            setLastSyncedAt(nextSyncAt)
+            localStorage.setItem('trms-last-sync-at', nextSyncAt)
+            await refreshReferrals()
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Sync failed.'
+            setSyncError(message)
+        } finally {
+            setIsSyncing(false)
         }
-    }, [])
+    }
 
     const completeReferral = async (input: CompleteReferralInput) => {
-        if (ENABLE_API_REFERRALS) {
+        const hasApiSession = isAuthenticated && Boolean(trmsApi.getToken())
+        if (hasApiSession) {
             try {
                 await trmsApi.addDischargeSummary(input.referralId, {
                     summary: input.treatmentSummary,
@@ -176,10 +337,14 @@ export function ReferralProvider({ children }: { children: ReactNode }) {
             dischargeSummaries,
             loading,
             error,
+            isSyncing,
+            lastSyncedAt,
+            syncError,
             completeReferral,
             refreshReferrals,
+            syncNow,
         }),
-        [referrals, dischargeSummaries, loading, error],
+        [referrals, dischargeSummaries, loading, error, isSyncing, lastSyncedAt, syncError],
     )
 
     return <ReferralContext.Provider value={value}>{children}</ReferralContext.Provider>
