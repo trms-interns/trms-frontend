@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import {
@@ -14,25 +14,34 @@ export default function Login() {
     const { login } = useAuth()
     const { isDark } = useTheme()
 
-    const [email, setEmail] = useState('')
+    const [username, setUsername] = useState('')
     const [password, setPassword] = useState('')
     const [showPassword, setShowPassword] = useState(false)
     const [error, setError] = useState('')
+    const [notice, setNotice] = useState('')
     const [loading, setLoading] = useState(false)
+
+    useEffect(() => {
+        const nextNotice = localStorage.getItem('trms-auth-notice')
+        if (nextNotice) {
+            setNotice(nextNotice)
+            localStorage.removeItem('trms-auth-notice')
+        }
+    }, [])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        if (!email || !password) {
-            setError('Please enter your email and password.')
+        if (!username || !password) {
+            setError('Please enter your username and password.')
             return
         }
         setLoading(true)
         setError('')
         // Simulate tiny async delay for UX
         await new Promise(r => setTimeout(r, 600))
-        const ok = login(email.trim(), password)
+        const ok = await login(username.trim(), password)
         if (!ok) {
-            setError('Invalid credentials. Please check your email and password.')
+            setError('Invalid credentials. Please check your username and password.')
         }
         setLoading(false)
     }
@@ -113,19 +122,19 @@ export default function Login() {
                             </div>
 
                             <form onSubmit={handleSubmit} className="space-y-4">
-                        {/* Email */}
+                        {/* Username */}
                         <div>
                             <label className={`block text-xs font-semibold mb-1.5 ${isDark ? 'text-surface-400' : 'text-surface-600'}`}>
-                                Email Address
+                                Username
                             </label>
                             <div className="relative">
                                 <IconMail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
                                 <input
-                                    type="email"
-                                    autoComplete="email"
-                                    placeholder="you@trms.et"
-                                    value={email}
-                                    onChange={e => { setEmail(e.target.value); setError('') }}
+                                    type="text"
+                                    autoComplete="username"
+                                    placeholder="liaison"
+                                    value={username}
+                                    onChange={e => { setUsername(e.target.value); setError('') }}
                                     className={inputClass}
                                 />
                             </div>
@@ -158,6 +167,13 @@ export default function Login() {
                         </div>
 
                         {/* Error */}
+                        {notice && (
+                            <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs animate-fade-in">
+                                <IconShieldCheck size={14} className="shrink-0" />
+                                {notice}
+                            </div>
+                        )}
+
                         {error && (
                             <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs animate-fade-in">
                                 <IconAlertCircle size={14} className="shrink-0" />
@@ -184,9 +200,10 @@ export default function Login() {
 
                             {/* Demo hint */}
                             <div className={`mt-6 p-3 rounded-lg text-[11px] leading-relaxed border ${isDark ? 'border-surface-800 bg-surface-950/40 text-surface-500' : 'border-surface-200 bg-surface-50 text-surface-500'}`}>
-                                <strong className={isDark ? 'text-surface-400' : 'text-surface-600'}>Demo credentials: </strong>
-                                admin@trms.et · liaison@trms.et · nurse@trms.et
-                                <br />Password: <span className="font-mono">trms2026</span>
+                                <strong className={isDark ? 'text-surface-400' : 'text-surface-600'}>Demo credentials </strong>
+                                <span className="font-medium">(password: <span className="font-mono">trms2026</span>)</span>
+                                <br />liaison · doctor · dept_head
+                                <br />facility_admin · sys_admin · nurse · hew
                             </div>
                         </div>
                     </div>

@@ -3,16 +3,16 @@
 
 @theme {
   --font-sans: 'Poppins', system-ui, sans-serif;
-  --color-primary-50: #2b4968;
-  --color-primary-100: #2b4968;
-  --color-primary-200: #2b4968;
-  --color-primary-300: #2b4968;
-  --color-primary-400: #2b4968;
-  --color-primary-500: #2b4968;
-  --color-primary-600: #2b4968;
-  --color-primary-700: #2b4968;
+  --color-primary-50: #f1f5f9;
+  --color-primary-100: #e2eaf2;
+  --color-primary-200: #c9daea;
+  --color-primary-300: #a1c3de;
+  --color-primary-400: #73a6cd;
+  --color-primary-500: #518bba;
+  --color-primary-600: #3d71a1;
+  --color-primary-700: #325a82;
   --color-primary-800: #2b4968;
-  --color-primary-900: #2b4968;
+  --color-primary-900: #263e56;
   --color-accent-400: #34d399;
   --color-accent-500: #10b981;
   --color-accent-600: #059669;
@@ -23,10 +23,12 @@
   --color-warning-500: #f59e0b;
   --color-warning-600: #d97706;
   --color-surface-50: #f8fafc;
-  /* Off-white neutrals for light mode */
   --color-surface-100: #f6f4f1;
   --color-surface-200: #ece7e1;
-  /* Neutral grays for dark mode (no blue cast) */
+  --color-surface-300: #d6d1ca;
+  --color-surface-400: #a39e93;
+  --color-surface-500: #737373;
+  --color-surface-600: #525252;
   --color-surface-700: #3f3f3f;
   --color-surface-800: #2f2f2f;
   --color-surface-850: #262626;

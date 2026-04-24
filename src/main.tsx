@@ -5,6 +5,7 @@ import App from './App'
 import { ThemeProvider } from './context/ThemeContext'
 import { LanguageProvider } from './context/LanguageContext'
 import { AuthProvider } from './context/AuthContext'
+import { ReferralProvider } from './context/ReferralContext'
 // @ts-ignore
 import './index.css'
 
@@ -14,11 +15,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <ThemeProvider>
                 <LanguageProvider>
                     <AuthProvider>
-                        <App />
+                        <ReferralProvider>
+                            <App />
+                        </ReferralProvider>
                     </AuthProvider>
                 </LanguageProvider>
             </ThemeProvider>
         </BrowserRouter>
     </React.StrictMode>,
 )
-

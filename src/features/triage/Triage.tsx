@@ -1,8 +1,10 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useLanguage } from '../../context/LanguageContext'
 import { useTheme } from '../../context/ThemeContext'
+import { useAuth } from '../../context/AuthContext'
+import { useReferrals } from '../../context/ReferralContext'
+import { trmsApi, type ApiFacility, type Department } from '../../lib/trmsApi'
 import StatusBadge from '../../components/StatusBadge'
-import { mockReferrals, mockTriageActions } from '../../data/mockData'
 import {
     IconCircleCheck,
     IconCircleX,
@@ -27,25 +29,72 @@ interface TriageActionRecord {
     note?: string
 }
 
+interface ActionFeedback {
+    type: 'accepted' | 'rejected' | 'redirected'
+    patientName: string
+    referralId: string
+    message: string
+}
+
+function TriageModal({
+    title,
+    icon,
+    children,
+    onClose,
+    isDark,
+}: {
+    title: string
+    icon: React.ReactNode
+    children: React.ReactNode
+    onClose: () => void
+    isDark: boolean
+}) {
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className={`w-full max-w-lg rounded-2xl shadow-2xl border ${isDark ? 'bg-surface-800 border-surface-700' : 'bg-white border-surface-200'} animate-fade-in`}>
+                <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? 'border-surface-700' : 'border-surface-100'}`}>
+                    <div className="flex items-center gap-2.5">
+                        {icon}
+                        <h3 className="text-base font-bold">{title}</h3>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className={`p-1 rounded-lg transition-colors ${isDark ? 'hover:bg-surface-700/60 text-surface-400' : 'hover:bg-surface-100 text-surface-500'}`}
+                    >
+                        <IconX size={16} />
+                    </button>
+                </div>
+                <div className="p-5">{children}</div>
+            </div>
+        </div>
+    )
+}
+
 export default function Triage() {
     const { t } = useLanguage()
     const { isDark } = useTheme()
+    const { user } = useAuth()
+    const { referrals, completeReferral, refreshReferrals } = useReferrals()
 
-    // TODO (Backend Team): Replace mockReferrals with an API call to fetch incoming priority referrals
-    // E.g. GET /api/referrals?status=pending,synced
-    const triageReferrals = mockReferrals.filter(r => ['synced', 'pending'].includes(r.status))
-    // TODO (Backend Team): Replace mockTriageActions with an API call to fetch recent chronological triage history
-    // E.g. GET /api/triage/actions
-    const [actions, setActions] = useState<TriageActionRecord[]>(mockTriageActions)
+    const [actions, setActions] = useState<TriageActionRecord[]>([])
     const [selectedRef, setSelectedRef] = useState<string | null>(null)
+    const [resolvedReferrals, setResolvedReferrals] = useState<Record<string, 'accepted' | 'rejected' | 'redirected'>>({})
+    const [feedback, setFeedback] = useState<ActionFeedback | null>(null)
+    const [actionLoading, setActionLoading] = useState(false)
+    const [actionError, setActionError] = useState('')
 
     // Modal state
     const [modal, setModal] = useState<ModalType>(null)
     const [actionRefId, setActionRefId] = useState('')
     // Reject / redirect
     const [rejectMsg, setRejectMsg] = useState('')
-    const [redirectTo, setRedirectTo] = useState('')
+    const [redirectToFacilityId, setRedirectToFacilityId] = useState('')
     const [redirectReason, setRedirectReason] = useState('')
+    const [departments, setDepartments] = useState<Department[]>([])
+    const [facilities, setFacilities] = useState<ApiFacility[]>([])
+    const [selectedDepartmentId, setSelectedDepartmentId] = useState('')
+    const [acceptWaitingTime, setAcceptWaitingTime] = useState('')
+    const [acceptAppointmentDate, setAcceptAppointmentDate] = useState('')
     // Accept message (auto-filled, editable)
     const [acceptMsg, setAcceptMsg] = useState('')
     // Report fields
@@ -54,7 +103,29 @@ export default function Triage() {
     const [followUp, setFollowUp] = useState('')
     const [notes, setNotes] = useState('')
 
-    const selected = mockReferrals.find(r => r.id === selectedRef)
+    useEffect(() => {
+        const loadActionMeta = async () => {
+            if (!user?.facilityId) return
+            try {
+                const [deptResult, facilityResult] = await Promise.all([
+                    trmsApi.getDepartments(user.facilityId),
+                    trmsApi.getFacilities(),
+                ])
+                setDepartments(deptResult.filter((dept) => dept.active !== false))
+                setFacilities(facilityResult)
+            } catch (error) {
+                console.error('Failed to load triage metadata:', error)
+            }
+        }
+
+        void loadActionMeta()
+    }, [user?.facilityId])
+
+    const triageReferrals = referrals.filter(
+        r => ['pending', 'forwarded'].includes(r.status) && !resolvedReferrals[r.id]
+    )
+
+    const selected = triageReferrals.find(r => r.id === selectedRef) || null
 
     // Urgency groups
     const emergency = triageReferrals.filter(r => r.priority === 'emergency')
@@ -63,65 +134,153 @@ export default function Triage() {
 
     const openModal = (type: ModalType, refId: string) => {
         setActionRefId(refId)
-        const ref = mockReferrals.find(r => r.id === refId)
+        const ref = referrals.find(r => r.id === refId)
         if (type === 'accept' && ref) {
             setAcceptMsg(
                 `Dear ${ref.referringFacility},\n\nWe are pleased to confirm the acceptance of your referral for patient ${ref.patientName} (${ref.mrn}). The patient has been scheduled for evaluation and admission.\n\nWarm regards,\nAyder Referral Hospital — Triage Team`
+            )
+        }
+        if (type === 'accept') {
+            const defaultDepartment = departments[0]?.id || ''
+            setSelectedDepartmentId(defaultDepartment)
+            setAcceptWaitingTime('')
+            setAcceptAppointmentDate('')
+        }
+        if (type === 'reject' && ref) {
+            setRejectMsg(
+                `Dear ${ref.referringFacility},\n\nWe are unable to accept the referral for patient ${ref.patientName} at this time.\n\nReason:\n\nRecommended next steps:\n\nWarm regards,\nAyder Referral Hospital — Triage Team`
             )
         }
         setModal(type)
     }
     const closeModal = () => {
         setModal(null)
-        setRejectMsg(''); setRedirectTo(''); setRedirectReason('')
+        setRejectMsg(''); setRedirectToFacilityId(''); setRedirectReason('')
+        setSelectedDepartmentId(''); setAcceptWaitingTime(''); setAcceptAppointmentDate('')
         setDiagnosis(''); setTreatment(''); setFollowUp(''); setNotes('')
     }
 
-    const handleAccept = () => {
-        const ref = mockReferrals.find(r => r.id === actionRefId)
-        if (!ref) return
-        
-        // TODO (Backend Team): Implement API call to accept referral and send notification to sender.
-        // E.g. POST /api/referrals/{actionRefId}/accept with { notificationMessage: acceptMsg }
-        
+    const handleAccept = async () => {
+        const ref = referrals.find(r => r.id === actionRefId)
+        if (!ref || !selectedDepartmentId) return
+
+        try {
+            setActionLoading(true)
+            setActionError('')
+            await trmsApi.acceptReferral(actionRefId, {
+                receivingDepartmentId: selectedDepartmentId,
+                waitingTime: acceptWaitingTime.trim() || undefined,
+                appointmentDate: acceptAppointmentDate || undefined,
+            })
+            await refreshReferrals()
+        } catch (error: any) {
+            setActionError(error?.message || 'Failed to accept referral.')
+            setActionLoading(false)
+            return
+        }
+
         setActions(prev => [
             { id: `TA-${Date.now()}`, referralId: actionRefId, patientName: ref.patientName, action: 'accepted', by: 'Ato Gebre', timestamp: new Date().toLocaleString(), note: acceptMsg.split('\n')[0] },
             ...prev,
         ])
+        setResolvedReferrals(prev => ({ ...prev, [actionRefId]: 'accepted' }))
+        setFeedback({
+            type: 'accepted',
+            patientName: ref.patientName,
+            referralId: actionRefId,
+            message: `${ref.patientName} has been accepted and removed from the live queue.`,
+        })
+        setSelectedRef(null)
         closeModal()
+        setActionLoading(false)
     }
 
-    const handleReject = () => {
-        const ref = mockReferrals.find(r => r.id === actionRefId)
+    const handleReject = async () => {
+        const ref = referrals.find(r => r.id === actionRefId)
         if (!ref || !rejectMsg) return
-        
-        // TODO (Backend Team): Implement API call to reject referral and send reason.
-        // E.g. POST /api/referrals/{actionRefId}/reject with { reason: rejectMsg }
-        
+
+        try {
+            setActionLoading(true)
+            setActionError('')
+            await trmsApi.rejectReferral(actionRefId, { reason: rejectMsg.trim() })
+            await refreshReferrals()
+        } catch (error: any) {
+            setActionError(error?.message || 'Failed to reject referral.')
+            setActionLoading(false)
+            return
+        }
+
         setActions(prev => [
             { id: `TA-${Date.now()}`, referralId: actionRefId, patientName: ref.patientName, action: 'rejected', by: 'Ato Gebre', timestamp: new Date().toLocaleString(), note: rejectMsg },
             ...prev,
         ])
+        setResolvedReferrals(prev => ({ ...prev, [actionRefId]: 'rejected' }))
+        setFeedback({
+            type: 'rejected',
+            patientName: ref.patientName,
+            referralId: actionRefId,
+            message: `${ref.patientName} has been rejected and the referring facility has been notified.`,
+        })
+        setSelectedRef(null)
         closeModal()
+        setActionLoading(false)
     }
 
-    const handleRedirect = () => {
-        const ref = mockReferrals.find(r => r.id === actionRefId)
-        if (!ref || !redirectTo) return
-        
-        // TODO (Backend Team): Implement API call to redirect referral.
-        // E.g. POST /api/referrals/{actionRefId}/redirect with { targetLocation: redirectTo, reason: redirectReason }
-        
+    const handleRedirect = async () => {
+        const ref = referrals.find(r => r.id === actionRefId)
+        if (!ref || !redirectToFacilityId || !redirectReason.trim()) return
+
+        const targetFacility = facilities.find((facility) => facility.id === redirectToFacilityId)
+
+        try {
+            setActionLoading(true)
+            setActionError('')
+            await trmsApi.forwardReferral(actionRefId, {
+                newReceivingFacilityId: redirectToFacilityId,
+                forwardingNote: redirectReason.trim(),
+            })
+            await refreshReferrals()
+        } catch (error: any) {
+            setActionError(error?.message || 'Failed to forward referral.')
+            setActionLoading(false)
+            return
+        }
+
         setActions(prev => [
-            { id: `TA-${Date.now()}`, referralId: actionRefId, patientName: ref.patientName, action: 'redirected', by: 'Ato Gebre', timestamp: new Date().toLocaleString(), note: `Redirected to ${redirectTo}. ${redirectReason}` },
+            { id: `TA-${Date.now()}`, referralId: actionRefId, patientName: ref.patientName, action: 'redirected', by: 'Ato Gebre', timestamp: new Date().toLocaleString(), note: `Redirected to ${targetFacility?.name || 'selected facility'}. ${redirectReason}` },
             ...prev,
         ])
+        setResolvedReferrals(prev => ({ ...prev, [actionRefId]: 'redirected' }))
+        setFeedback({
+            type: 'redirected',
+            patientName: ref.patientName,
+            referralId: actionRefId,
+            message: `${ref.patientName} has been forwarded to ${targetFacility?.name || 'the selected facility'}.`,
+        })
+        setSelectedRef(null)
         closeModal()
+        setActionLoading(false)
     }
 
     const handleReport = () => {
-        // TODO (Backend Team): Implement API call to submit post-treatment clinical report.
-        // E.g. POST /api/referrals/{selectedRef}/report with payload: { diagnosis, treatment, followUp, notes }
+        if (!selectedRef || !diagnosis.trim() || !treatment.trim() || !followUp.trim()) return
+        completeReferral({
+            referralId: selectedRef,
+            finalDiagnosis: diagnosis.trim(),
+            treatmentSummary: treatment.trim(),
+            medicationsPrescribed: notes.trim() || 'No medications documented.',
+            followUpInstructions: followUp.trim(),
+            dischargeDate: new Date().toISOString().slice(0, 10),
+            createdByUserId: user?.id || 'USR-UNKNOWN',
+            createdByName: user?.name || 'Assigned Clinician',
+        })
+        setFeedback({
+            type: 'accepted',
+            patientName: selected?.patientName || 'Patient',
+            referralId: selectedRef,
+            message: `Discharge summary submitted for ${selected?.patientName || 'the patient'}. Referral marked as completed.`,
+        })
+        setSelectedRef(null)
         closeModal()
     }
 
@@ -130,7 +289,7 @@ export default function Triage() {
     const textareaCls = `w-full px-3 py-2.5 rounded-lg text-sm border outline-none resize-none leading-relaxed ${isDark ? 'bg-surface-950 border-surface-800 text-surface-100 placeholder-surface-500 focus:border-primary-400' : 'bg-surface-50 border-surface-200 text-surface-900 placeholder-surface-400 focus:border-primary-500'} transition-colors`
     const inputCls = `w-full px-3 py-2.5 rounded-lg text-sm border outline-none ${isDark ? 'bg-surface-950 border-surface-800 text-surface-100 placeholder-surface-500 focus:border-primary-400' : 'bg-surface-50 border-surface-200 text-surface-900 placeholder-surface-400 focus:border-primary-500'} transition-colors`
 
-    function ReferralCard({ ref: r, i }: { ref: typeof mockReferrals[0]; i: number }) {
+    function ReferralCard({ ref: r, i }: { ref: typeof referrals[number]; i: number }) {
         const isSelected = selectedRef === r.id
         return (
             <button
@@ -154,7 +313,7 @@ export default function Triage() {
         )
     }
 
-    function Section({ label, color, dot, items }: { label: string; color: string; dot: string; items: typeof mockReferrals }) {
+    function Section({ label, color, dot, items }: { label: string; color: string; dot: string; items: typeof referrals }) {
         if (items.length === 0) return null
         return (
             <div>
@@ -170,32 +329,41 @@ export default function Triage() {
         )
     }
 
-    // ── Modal backdrop ──────────────────────────────────────────────────────
-    function Modal({ title, icon, children, onClose }: { title: string; icon: React.ReactNode; children: React.ReactNode; onClose: () => void }) {
-        return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                <div className={`w-full max-w-lg rounded-2xl shadow-2xl border ${isDark ? 'bg-surface-800 border-surface-700' : 'bg-white border-surface-200'} animate-fade-in`}>
-                    <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? 'border-surface-700' : 'border-surface-100'}`}>
-                        <div className="flex items-center gap-2.5">
-                            {icon}
-                            <h3 className="text-base font-bold">{title}</h3>
-                        </div>
-                        <button
-                            onClick={onClose}
-                            className={`p-1 rounded-lg transition-colors ${isDark ? 'hover:bg-surface-700/60 text-surface-400' : 'hover:bg-surface-100 text-surface-500'}`}
-                        >
-                            <IconX size={16} />
-                        </button>
-                    </div>
-                    <div className="p-5">{children}</div>
-                </div>
-            </div>
-        )
-    }
-
     return (
         <div className="space-y-5 animate-fade-in">
             <h2 className="text-2xl font-bold">{t('tri.title')}</h2>
+            {actionError && <p className="text-xs text-red-500">{actionError}</p>}
+
+            {feedback && (
+                <div className={`rounded-2xl border px-4 py-3 flex items-start gap-3 ${feedback.type === 'accepted'
+                    ? isDark ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-emerald-200 bg-emerald-50'
+                    : feedback.type === 'rejected'
+                        ? isDark ? 'border-red-500/30 bg-red-500/10' : 'border-red-200 bg-red-50'
+                        : isDark ? 'border-[#2b4968]/40 bg-[#2b4968]/10' : 'border-[#2b4968]/20 bg-[#2b4968]/10'
+                    }`}>
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${feedback.type === 'accepted'
+                        ? isDark ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-100 text-emerald-700'
+                        : feedback.type === 'rejected'
+                            ? isDark ? 'bg-red-500/20 text-red-300' : 'bg-red-100 text-red-700'
+                            : isDark ? 'bg-[#2b4968]/20 text-[#7ba0c8]' : 'bg-[#2b4968]/10 text-[#2b4968]'
+                        }`}>
+                        {feedback.type === 'accepted' ? <IconCircleCheck size={16} /> : feedback.type === 'rejected' ? <IconCircleX size={16} /> : <IconArrowsLeftRight size={16} />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold">{feedback.message}</p>
+                        <p className={`text-xs mt-1 ${isDark ? 'text-surface-400' : 'text-surface-600'}`}>
+                            Referral ID: <strong>{feedback.referralId}</strong>
+                        </p>
+                    </div>
+                    <button
+                        onClick={() => setFeedback(null)}
+                        className={`p-1 rounded-lg ${isDark ? 'text-surface-400 hover:bg-surface-800' : 'text-surface-500 hover:bg-white/70'}`}
+                        aria-label="Dismiss confirmation"
+                    >
+                        <IconX size={16} />
+                    </button>
+                </div>
+            )}
 
             <div className={`${cardBase} flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4`}>
                 <div className="space-y-1">
@@ -350,14 +518,48 @@ export default function Triage() {
 
             {/* ── ACCEPT MODAL ─────────────────────────────────────────────── */}
             {modal === 'accept' && (
-                <Modal
+                <TriageModal
                     title={t('tri.acceptMsg')}
                     icon={<div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-emerald-500/20' : 'bg-emerald-100'}`}><IconCircleCheck size={14} className={`${isDark ? 'text-emerald-300' : 'text-emerald-600'}`} /></div>}
                     onClose={closeModal}
+                    isDark={isDark}
                 >
                     <p className={`text-xs mb-3 ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>
                         The following acceptance notification will be sent to the referring facility.
                     </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                        <div>
+                            <label className="text-xs font-semibold text-surface-400 mb-1 block">Receiving Department</label>
+                            <select
+                                className={inputCls}
+                                value={selectedDepartmentId}
+                                onChange={(e) => setSelectedDepartmentId(e.target.value)}
+                            >
+                                <option value="">Select department</option>
+                                {departments.map((department) => (
+                                    <option key={department.id} value={department.id}>{department.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-xs font-semibold text-surface-400 mb-1 block">Estimated Waiting Time</label>
+                            <input
+                                className={inputCls}
+                                placeholder="e.g. 30 minutes"
+                                value={acceptWaitingTime}
+                                onChange={(e) => setAcceptWaitingTime(e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-semibold text-surface-400 mb-1 block">Appointment Date (optional)</label>
+                            <input
+                                type="date"
+                                className={inputCls}
+                                value={acceptAppointmentDate}
+                                onChange={(e) => setAcceptAppointmentDate(e.target.value)}
+                            />
+                        </div>
+                    </div>
                     <textarea
                         className={textareaCls}
                         rows={7}
@@ -365,60 +567,70 @@ export default function Triage() {
                         onChange={e => setAcceptMsg(e.target.value)}
                     />
                     <div className="flex gap-3 mt-4">
-                        <button onClick={handleAccept} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 transition-colors">
+                        <button onClick={handleAccept} disabled={actionLoading || !selectedDepartmentId} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-60">
                             <IconSend size={14} /> IconSend & Confirm Acceptance
                         </button>
                         <button onClick={closeModal} className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}>{t('common.cancel')}</button>
                     </div>
-                </Modal>
+                </TriageModal>
             )}
 
             {/* ── REJECT MODAL ─────────────────────────────────────────────── */}
             {modal === 'reject' && (
-                <Modal
+                <TriageModal
                     title={t('tri.rejectReason')}
                     icon={<div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-red-500/20' : 'bg-red-100'}`}><IconCircleX size={14} className={`${isDark ? 'text-red-300' : 'text-red-600'}`} /></div>}
                     onClose={closeModal}
+                    isDark={isDark}
                 >
                     <p className={`text-xs mb-3 ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>
-                        Write a clear rejection message that the referring facility will receive.
+                        Edit the message below and send it to the referring facility.
                     </p>
+                    <label className="text-xs font-semibold text-surface-400 mb-1.5 block uppercase tracking-wide">
+                        Rejection Message
+                    </label>
                     <textarea
                         className={textareaCls}
                         rows={5}
-                        placeholder={`Dear [Facility],\n\nWe are unable to accept this referral at this time due to...\n\nReason: [clinical / capacity reason]\n\nRecommended next steps: ...`}
+                        autoFocus
                         value={rejectMsg}
                         onChange={e => setRejectMsg(e.target.value)}
                     />
                     <div className="flex gap-3 mt-4">
-                        <button onClick={handleReject} disabled={!rejectMsg.trim()} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-red-700 transition-colors">
+                        <button onClick={handleReject} disabled={actionLoading || !rejectMsg.trim()} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-red-700 transition-colors">
                             <IconSend size={14} /> IconSend Rejection
                         </button>
                         <button onClick={closeModal} className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}>{t('common.cancel')}</button>
                     </div>
-                </Modal>
+                </TriageModal>
             )}
 
             {/* ── REDIRECT MODAL ───────────────────────────────────────────── */}
             {modal === 'redirect' && (
-                <Modal
+                <TriageModal
                     title={t('tri.redirectMsg')}
                     icon={<div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-[#2b4968]/20' : 'bg-[#2b4968]/10'}`}><IconArrowsLeftRight size={14} className={`${isDark ? 'text-[#2b4968]' : 'text-[#2b4968]'}`} /></div>}
                     onClose={closeModal}
+                    isDark={isDark}
                 >
                     <p className={`text-xs mb-3 ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>
                         Specify where the patient is being redirected and why.
                     </p>
                     <div className="space-y-3">
                         <div>
-                            <label className="text-xs font-semibold text-surface-400 mb-1 block">Redirect To (Department / Facility)</label>
-                            <input
-                                type="text"
+                            <label className="text-xs font-semibold text-surface-400 mb-1 block">Redirect To Facility</label>
+                            <select
                                 className={inputCls}
-                                placeholder="e.g. Orthopedics Dept. — Axum St. Mary Hospital"
-                                value={redirectTo}
-                                onChange={e => setRedirectTo(e.target.value)}
-                            />
+                                value={redirectToFacilityId}
+                                onChange={e => setRedirectToFacilityId(e.target.value)}
+                            >
+                                <option value="">Select facility</option>
+                                {facilities
+                                    .filter((facility) => facility.id !== user?.facilityId)
+                                    .map((facility) => (
+                                        <option key={facility.id} value={facility.id}>{facility.name}</option>
+                                    ))}
+                            </select>
                         </div>
                         <div>
                             <label className="text-xs font-semibold text-surface-400 mb-1 block">Reason for Redirection</label>
@@ -432,20 +644,21 @@ export default function Triage() {
                         </div>
                     </div>
                     <div className="flex gap-3 mt-4">
-                        <button onClick={handleRedirect} disabled={!redirectTo.trim()} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-[#2b4968] text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-[#2b4968]/90 transition-colors">
+                        <button onClick={handleRedirect} disabled={actionLoading || !redirectToFacilityId || !redirectReason.trim()} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-[#2b4968] text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-[#2b4968]/90 transition-colors">
                             <IconSend size={14} /> IconSend Redirect Notice
                         </button>
                         <button onClick={closeModal} className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}>{t('common.cancel')}</button>
                     </div>
-                </Modal>
+                </TriageModal>
             )}
 
             {/* ── TREATMENT REPORT MODAL ───────────────────────────────────── */}
             {modal === 'report' && selected && (
-                <Modal
+                <TriageModal
                     title={t('tri.reportTitle')}
                     icon={<div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-primary-500/20' : 'bg-primary-100'}`}><IconClipboardCheck size={14} className={`${isDark ? 'text-primary-300' : 'text-primary-600'}`} /></div>}
                     onClose={closeModal}
+                    isDark={isDark}
                 >
                     <p className={`text-xs mb-4 ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>
                         This report will be sent to <strong className={isDark ? 'text-surface-300' : 'text-surface-700'}>{selected.referringFacility}</strong> and added to the patient record for {selected.patientName}.
@@ -478,7 +691,7 @@ export default function Triage() {
                         </button>
                         <button onClick={closeModal} className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}>{t('common.cancel')}</button>
                     </div>
-                </Modal>
+                </TriageModal>
             )}
         </div>
     )

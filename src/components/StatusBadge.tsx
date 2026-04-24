@@ -1,7 +1,7 @@
 import React from 'react'
 
 type Priority = 'emergency' | 'urgent' | 'routine'
-type Status = 'synced' | 'pending' | 'failed' | 'accepted' | 'rejected' | 'redirected' | 'completed' | 'available' | 'limited' | 'unavailable' | 'sent'
+type Status = 'draft' | 'synced' | 'pending' | 'pending_routing' | 'failed' | 'accepted' | 'rejected' | 'redirected' | 'forwarded' | 'completed' | 'available' | 'limited' | 'unavailable' | 'sent'
 
 interface Props {
     type: 'priority' | 'status' | 'sync' | 'department'
@@ -14,12 +14,15 @@ const config: Record<string, { bg: string; text: string; label: string }> = {
     urgent: { bg: 'bg-amber-500/15', text: 'text-amber-400', label: 'Urgent' },
     routine: { bg: 'bg-[#2b4968]/15', text: 'text-[#2b4968]', label: 'Routine' },
     // Status
+    draft: { bg: 'bg-surface-500/15', text: 'text-surface-400', label: 'Draft' },
     synced: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', label: '✓ Synced' },
     pending: { bg: 'bg-amber-500/15', text: 'text-amber-400', label: '⏳ Pending' },
+    pending_routing: { bg: 'bg-sky-500/15', text: 'text-sky-400', label: 'Pending Routing' },
     failed: { bg: 'bg-red-500/15', text: 'text-red-400', label: '✗ Failed' },
     accepted: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', label: 'Accepted' },
     rejected: { bg: 'bg-red-500/15', text: 'text-red-400', label: 'Rejected' },
     redirected: { bg: 'bg-purple-500/15', text: 'text-purple-400', label: 'Redirected' },
+    forwarded: { bg: 'bg-purple-500/15', text: 'text-purple-400', label: 'Forwarded' },
     completed: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', label: 'Completed' },
     // Department
     available: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', label: 'Available' },
