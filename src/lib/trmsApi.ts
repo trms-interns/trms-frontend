@@ -178,6 +178,20 @@ export function buildCreateReferralPayload(form: CreateReferralFormValues): Crea
     }
 }
 
+export function toDisplayReferralId(referralCode: string | null | undefined, fallbackId: string): string {
+    const normalizedCode = referralCode?.trim()
+    if (normalizedCode) return normalizedCode
+
+    const hexChars = fallbackId.replace(/-/g, '').toLowerCase()
+    let numeric = 0
+    for (const ch of hexChars) {
+        const parsed = Number.parseInt(ch, 16)
+        if (Number.isNaN(parsed)) continue
+        numeric = (numeric * 16 + parsed) % 100000000
+    }
+    return `REF-${numeric.toString().padStart(8, '0')}`
+}
+
 export class TrmsApiError extends Error {
     status: number
 
@@ -342,6 +356,7 @@ export interface ExportReportQueryParams extends ReportQueryParams {
 
 export interface ApiReferral {
     id: string
+    referralCode?: string
     patient: any
     referringFacilityId: string
     referringUserId: string

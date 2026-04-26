@@ -77,6 +77,7 @@ function apiReferralToReferral(
 
     return {
         id: apiReferral.id,
+        referralCode: apiReferral.referralCode,
         patientId: apiReferral.patient?.id || 'UNKNOWN',
         patientName: apiReferral.patient?.fullName || 'Unknown Patient',
         mrn: 'MRN-' + apiReferral.id.slice(0, 8),
@@ -125,18 +126,21 @@ function apiReferralToReferral(
     }
 }
 
-function apiDischargeSummaryToDischargeSummary(apiSummary: ApiDischargeSummary): DischargeSummary {
+function apiDischargeSummaryToDischargeSummary(
+    apiSummary: ApiDischargeSummary,
+    patientName?: string,
+): DischargeSummary {
     return {
         id: apiSummary.id,
         referralId: apiSummary.referralId,
-        patientName: 'Patient', // Would need to fetch from referral
+        patientName: patientName || 'Patient',
         treatmentSummary: apiSummary.summaryText,
         finalDiagnosis: apiSummary.finalDiagnosis,
         medicationsPrescribed: apiSummary.medicationsPrescribed,
         followUpInstructions: apiSummary.followUpInstructions,
         dischargeDate: apiSummary.dischargeDate,
         createdByUserId: apiSummary.createdByUserId,
-        createdByName: 'Doctor',
+        createdByName: 'Doctor', // Could be enriched if API includes creator info
         createdAt: new Date(apiSummary.createdAt).toLocaleString(),
     }
 }
@@ -194,6 +198,22 @@ export function ReferralProvider({ children }: { children: ReactNode }) {
                 }),
             )
             setReferrals(convertedReferrals)
+
+            const fetchedSummaries: DischargeSummary[] = []
+            for (const apiRef of apiReferrals) {
+                if (apiRef.dischargeSummary) {
+                    fetchedSummaries.push(
+                        apiDischargeSummaryToDischargeSummary(
+                            {
+                                ...apiRef.dischargeSummary,
+                                referralId: apiRef.id,
+                            },
+                            apiRef.patient?.fullName || 'Unknown Patient'
+                        )
+                    )
+                }
+            }
+            setDischargeSummaries(fetchedSummaries)
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch referrals')
             console.error('Error fetching referrals:', err)
