@@ -1,5 +1,6 @@
 export interface Referral {
     id: string
+    referralCode?: string
     patientId: string
     patientName: string
     mrn: string

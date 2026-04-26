@@ -197,14 +197,6 @@ export default function Login() {
                             )}
                         </button>
                             </form>
-
-                            {/* Demo hint */}
-                            <div className={`mt-6 p-3 rounded-lg text-[11px] leading-relaxed border ${isDark ? 'border-surface-800 bg-surface-950/40 text-surface-500' : 'border-surface-200 bg-surface-50 text-surface-500'}`}>
-                                <strong className={isDark ? 'text-surface-400' : 'text-surface-600'}>Demo credentials </strong>
-                                <span className="font-medium">(password: <span className="font-mono">trms2026</span>)</span>
-                                <br />liaison · doctor · dept_head
-                                <br />facility_admin · sys_admin · nurse · hew
-                            </div>
                         </div>
                     </div>
                 </div>

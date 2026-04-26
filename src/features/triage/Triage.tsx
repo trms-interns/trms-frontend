@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useLanguage } from '../../context/LanguageContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useAuth } from '../../context/AuthContext'
 import { useReferrals } from '../../context/ReferralContext'
-import { trmsApi, type ApiFacility, type Department } from '../../lib/trmsApi'
+import { TrmsApiError, trmsApi, toDisplayReferralId, type ApiFacility, type Department } from '../../lib/trmsApi'
 import StatusBadge from '../../components/StatusBadge'
 import {
     IconCircleCheck,
@@ -15,6 +16,8 @@ import {
     IconSend,
     IconX,
     IconClipboardCheck,
+    IconExternalLink,
+    IconSearch,
 } from '@tabler/icons-react'
 
 type ModalType = 'accept' | 'reject' | 'redirect' | 'report' | null
@@ -71,6 +74,7 @@ function TriageModal({
 }
 
 export default function Triage() {
+    const navigate = useNavigate()
     const { t } = useLanguage()
     const { isDark } = useTheme()
     const { user } = useAuth()
@@ -82,6 +86,8 @@ export default function Triage() {
     const [feedback, setFeedback] = useState<ActionFeedback | null>(null)
     const [actionLoading, setActionLoading] = useState(false)
     const [actionError, setActionError] = useState('')
+    const [queueFilter, setQueueFilter] = useState<'all' | 'emergency' | 'urgent' | 'routine'>('all')
+    const [queueSearch, setQueueSearch] = useState('')
 
     // Modal state
     const [modal, setModal] = useState<ModalType>(null)
@@ -124,13 +130,24 @@ export default function Triage() {
     const triageReferrals = referrals.filter(
         r => ['pending', 'forwarded'].includes(r.status) && !resolvedReferrals[r.id]
     )
+    const filteredQueueReferrals = triageReferrals.filter((referral) => {
+        if (queueFilter !== 'all' && referral.priority !== queueFilter) return false
+        const search = queueSearch.trim().toLowerCase()
+        if (!search) return true
+        const displayId = toDisplayReferralId(referral.referralCode, referral.id).toLowerCase()
+        return (
+            referral.patientName.toLowerCase().includes(search) ||
+            referral.id.toLowerCase().includes(search) ||
+            displayId.includes(search)
+        )
+    })
 
-    const selected = triageReferrals.find(r => r.id === selectedRef) || null
+    const selected = filteredQueueReferrals.find(r => r.id === selectedRef) || null
 
     // Urgency groups
-    const emergency = triageReferrals.filter(r => r.priority === 'emergency')
-    const urgent = triageReferrals.filter(r => r.priority === 'urgent')
-    const routine = triageReferrals.filter(r => r.priority === 'routine')
+    const emergency = filteredQueueReferrals.filter(r => r.priority === 'emergency')
+    const urgent = filteredQueueReferrals.filter(r => r.priority === 'urgent')
+    const routine = filteredQueueReferrals.filter(r => r.priority === 'routine')
 
     const openModal = (type: ModalType, refId: string) => {
         setActionRefId(refId)
@@ -240,8 +257,8 @@ export default function Triage() {
                 forwardingNote: redirectReason.trim(),
             })
             await refreshReferrals()
-        } catch (error: any) {
-            setActionError(error?.message || 'Failed to forward referral.')
+        } catch (error: unknown) {
+            setActionError(getForwardErrorMessage(error))
             setActionLoading(false)
             return
         }
@@ -288,14 +305,36 @@ export default function Triage() {
     const panelBase = `rounded-2xl border p-4 shadow-sm ${isDark ? 'bg-surface-900 border-surface-800' : 'bg-white border-surface-200'}`
     const textareaCls = `w-full px-3 py-2.5 rounded-lg text-sm border outline-none resize-none leading-relaxed ${isDark ? 'bg-surface-950 border-surface-800 text-surface-100 placeholder-surface-500 focus:border-primary-400' : 'bg-surface-50 border-surface-200 text-surface-900 placeholder-surface-400 focus:border-primary-500'} transition-colors`
     const inputCls = `w-full px-3 py-2.5 rounded-lg text-sm border outline-none ${isDark ? 'bg-surface-950 border-surface-800 text-surface-100 placeholder-surface-500 focus:border-primary-400' : 'bg-surface-50 border-surface-200 text-surface-900 placeholder-surface-400 focus:border-primary-500'} transition-colors`
+    const getForwardErrorMessage = (error: unknown): string => {
+        if (error instanceof TrmsApiError) {
+            if (error.status === 403) return 'You are not allowed to forward this referral.'
+            if (error.status === 404) return 'Referral or destination facility not found. Refresh and try again.'
+            if (error.status === 400) return error.message || 'Please select facility and enter forwarding reason.'
+            return error.message || 'Failed to forward referral.'
+        }
+        if (error instanceof Error && error.message) return error.message
+        return 'Failed to forward referral. Please try again.'
+    }
+    const openReferralDetails = (referralId: string) => {
+        navigate(`/referrals/my/${referralId}`)
+    }
 
     function ReferralCard({ ref: r, i }: { ref: typeof referrals[number]; i: number }) {
         const isSelected = selectedRef === r.id
+        const displayReferralId = toDisplayReferralId(r.referralCode, r.id)
         return (
-            <button
+            <div
                 key={r.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelectedRef(r.id)}
-                className={`w-full text-left rounded-lg p-3.5 border transition-all duration-150 hover:-translate-y-0.5
+                onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        setSelectedRef(r.id)
+                    }
+                }}
+                className={`w-full text-left rounded-lg p-3.5 border transition-all duration-150 hover:-translate-y-0.5 cursor-pointer
                     ${isSelected
                         ? isDark ? 'border-primary-500/60 bg-primary-500/10 shadow-md shadow-primary-500/20' : 'border-primary-400 bg-primary-50 shadow-md shadow-primary-500/10'
                         : isDark ? 'border-surface-800 bg-surface-950 hover:border-surface-700' : 'border-surface-200 bg-white hover:border-surface-300'
@@ -307,9 +346,25 @@ export default function Triage() {
                     <span className="text-sm font-semibold truncate pr-2">{r.patientName}</span>
                     <StatusBadge type="priority" value={r.priority} />
                 </div>
-                <p className={`text-xs truncate ${isDark ? 'text-surface-400' : 'text-surface-600'}`}>{r.chiefComplaint}</p>
-                <p className={`text-[10px] mt-1 ${isDark ? 'text-surface-500' : 'text-surface-400'}`}>{t('tri.from')}: {r.referringFacility} · {r.date}</p>
-            </button>
+                <div className="flex items-center justify-between gap-2 mt-1.5">
+                    <p className={`text-[10px] font-semibold uppercase tracking-wide ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>
+                        {displayReferralId}
+                    </p>
+                    <button
+                        type="button"
+                        onClick={(event) => {
+                            event.stopPropagation()
+                            openReferralDetails(r.id)
+                        }}
+                        className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-md border transition-colors ${isDark ? 'border-surface-700 text-primary-300 hover:bg-surface-900' : 'border-surface-300 text-primary-700 hover:bg-primary-50'}`}
+                    >
+                        <IconExternalLink size={11} />
+                        Open Details
+                    </button>
+                </div>
+                <p className={`text-xs truncate mt-2 ${isDark ? 'text-surface-400' : 'text-surface-600'}`}>{r.chiefComplaint}</p>
+                <p className={`text-[10px] mt-1.5 ${isDark ? 'text-surface-500' : 'text-surface-400'}`}>{t('tri.from')}: {r.referringFacility} · {r.date}</p>
+            </div>
         )
     }
 
@@ -352,7 +407,7 @@ export default function Triage() {
                     <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold">{feedback.message}</p>
                         <p className={`text-xs mt-1 ${isDark ? 'text-surface-400' : 'text-surface-600'}`}>
-                            Referral ID: <strong>{feedback.referralId}</strong>
+                            Referral ID: <strong>{toDisplayReferralId(undefined, feedback.referralId)}</strong>
                         </p>
                     </div>
                     <button
@@ -400,17 +455,53 @@ export default function Triage() {
                                 <IconAlertTriangle size={14} />
                             </div>
                             <div>
-                                <span className="text-sm font-semibold">{t('tri.incoming')} ({triageReferrals.length})</span>
+                                <span className="text-sm font-semibold">{t('tri.incoming')} ({filteredQueueReferrals.length})</span>
                                 <p className={`text-[11px] ${isDark ? 'text-surface-500' : 'text-surface-500'}`}>Sorted by clinical urgency</p>
+                            </div>
+                        </div>
+                        <div className="space-y-3">
+                            <div className={`relative rounded-lg border ${isDark ? 'border-surface-700 bg-surface-950' : 'border-surface-200 bg-surface-50'}`}>
+                                <IconSearch size={14} className={`absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-surface-500' : 'text-surface-400'}`} />
+                                <input
+                                    value={queueSearch}
+                                    onChange={(event) => setQueueSearch(event.target.value)}
+                                    placeholder="Search patient or referral ID..."
+                                    className={`w-full pl-9 pr-3 py-2.5 text-xs rounded-lg bg-transparent outline-none ${isDark ? 'text-surface-100 placeholder:text-surface-500' : 'text-surface-900 placeholder:text-surface-400'}`}
+                                />
+                            </div>
+                            <div className="grid grid-cols-4 gap-2">
+                                {[
+                                    { id: 'all', label: 'All' },
+                                    { id: 'emergency', label: 'Emergency' },
+                                    { id: 'urgent', label: 'Urgent' },
+                                    { id: 'routine', label: 'Routine' },
+                                ].map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => setQueueFilter(tab.id as 'all' | 'emergency' | 'urgent' | 'routine')}
+                                        className={`px-2 py-2 rounded-lg text-[11px] font-semibold border transition-colors ${
+                                            queueFilter === tab.id
+                                                ? isDark
+                                                    ? 'border-primary-500/60 bg-primary-500/15 text-primary-300'
+                                                    : 'border-primary-400 bg-primary-50 text-primary-700'
+                                                : isDark
+                                                    ? 'border-surface-700 text-surface-400 hover:bg-surface-900'
+                                                    : 'border-surface-200 text-surface-600 hover:bg-surface-100'
+                                        }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
                             </div>
                         </div>
                         <Section label="Emergency" color="text-red-500" dot="bg-red-500" items={emergency} />
                         <Section label="Urgent" color="text-amber-500" dot="bg-amber-500" items={urgent} />
                         <Section label="Routine" color="text-[#2b4968]" dot="bg-[#2b4968]" items={routine} />
-                        {triageReferrals.length === 0 && (
+                        {filteredQueueReferrals.length === 0 && (
                             <div className="text-center py-8">
                                 <IconCircleCheck size={24} className="mx-auto text-emerald-400 mb-2" />
-                                <p className="text-sm text-surface-500">All referrals triaged</p>
+                                <p className="text-sm text-surface-500">{queueSearch || queueFilter !== 'all' ? 'No referrals match your filters.' : 'All referrals triaged'}</p>
                             </div>
                         )}
                     </div>
@@ -420,6 +511,34 @@ export default function Triage() {
                 <div className="lg:col-span-3 space-y-4">
                     {selected ? (
                         <>
+                            <div className={`sticky top-4 z-20 rounded-xl border p-3 backdrop-blur ${isDark ? 'border-surface-700 bg-surface-900/90' : 'border-surface-200 bg-white/95'}`}>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                    <button
+                                        onClick={() => openModal('accept', selected.id)}
+                                        className="flex items-center justify-center gap-2 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition-all"
+                                    >
+                                        <IconCircleCheck size={14} /> {t('tri.accept')}
+                                    </button>
+                                    <button
+                                        onClick={() => openModal('reject', selected.id)}
+                                        className="flex items-center justify-center gap-2 py-2 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 transition-all"
+                                    >
+                                        <IconCircleX size={14} /> {t('tri.reject')}
+                                    </button>
+                                    <button
+                                        onClick={() => openModal('redirect', selected.id)}
+                                        className={`flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold border transition-all ${isDark ? 'border-surface-700 text-surface-300 hover:bg-surface-800' : 'border-surface-300 text-surface-700 hover:bg-surface-100'}`}
+                                    >
+                                        <IconArrowsLeftRight size={14} /> {t('tri.redirect')}
+                                    </button>
+                                    <button
+                                        onClick={() => openModal('report', selected.id)}
+                                        className={`flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold border transition-all ${isDark ? 'border-primary-500/40 text-primary-300 hover:bg-primary-500/10' : 'border-primary-300 text-primary-700 hover:bg-primary-50'}`}
+                                    >
+                                        <IconFileText size={14} /> {t('tri.writeReport')}
+                                    </button>
+                                </div>
+                            </div>
                             <div className={cardBase}>
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-3">
@@ -454,36 +573,6 @@ export default function Triage() {
                                     )}
                                 </div>
                             </div>
-
-                            {/* Action buttons */}
-                            <div className="grid grid-cols-3 gap-3">
-                                <button
-                                    onClick={() => openModal('accept', selected.id)}
-                                    className="flex items-center justify-center gap-2 py-3 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 transition-all hover:-translate-y-0.5"
-                                >
-                                    <IconCircleCheck size={15} /> {t('tri.accept')}
-                                </button>
-                                <button
-                                    onClick={() => openModal('reject', selected.id)}
-                                    className="flex items-center justify-center gap-2 py-3 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-all hover:-translate-y-0.5"
-                                >
-                                    <IconCircleX size={15} /> {t('tri.reject')}
-                                </button>
-                                <button
-                                    onClick={() => openModal('redirect', selected.id)}
-                                    className={`flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-semibold border transition-all hover:-translate-y-0.5 ${isDark ? 'border-surface-700 text-surface-300 hover:bg-surface-800' : 'border-surface-300 text-surface-700 hover:bg-surface-100'}`}
-                                >
-                                    <IconArrowsLeftRight size={15} /> {t('tri.redirect')}
-                                </button>
-                            </div>
-
-                            {/* Write Report button for already-accepted patients */}
-                            <button
-                                onClick={() => openModal('report', selected.id)}
-                                className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold border transition-all hover:-translate-y-0.5 ${isDark ? 'border-primary-500/40 text-primary-400 hover:bg-primary-500/10' : 'border-primary-300 text-primary-700 hover:bg-primary-50'}`}
-                            >
-                                <IconFileText size={15} /> {t('tri.writeReport')}
-                            </button>
                         </>
                     ) : (
                         <div className={`${cardBase} text-center py-16`}>

@@ -4,7 +4,12 @@ import { useLanguage } from "../../context/LanguageContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
 import { useReferrals } from "../../context/ReferralContext";
-import { trmsApi, type ApiFacility, type Department } from "../../lib/trmsApi";
+import {
+  trmsApi,
+  toDisplayReferralId,
+  type ApiFacility,
+  type Department,
+} from "../../lib/trmsApi";
 import { buildCreateReferralPayload } from "../../lib/trmsApi";
 import FormField from "../../components/FormField";
 import {
@@ -69,10 +74,8 @@ export default function CreateReferral() {
   >({});
   const [submitted, setSubmitted] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
-  const [queuedPayload, setQueuedPayload] = useState<ReturnType<
-    typeof buildCreateReferralPayload
-  > | null>(null);
   const [createdReferralId, setCreatedReferralId] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [submittedStatus, setSubmittedStatus] = useState<"draft" | "pending">(
     "pending",
   );
@@ -279,12 +282,11 @@ export default function CreateReferral() {
 
   const handleSubmit = async (mode: "draft" | "pending") => {
     if (!validate()) return;
+    setSubmitError(null);
     const payload = {
       ...buildCreateReferralPayload(form),
       status: mode,
     };
-    setQueuedPayload(payload);
-    
     try {
       const response = await trmsApi.createReferral(payload);
       if (isEditMode && editReferralId) {
@@ -294,13 +296,14 @@ export default function CreateReferral() {
           console.error("Failed to delete replaced referral:", deleteError);
         }
       }
-      setCreatedReferralId(response.id);
+      setCreatedReferralId(toDisplayReferralId(response.referralCode, response.id));
       setSubmittedStatus(mode);
       await refreshReferrals();
       setSubmitted(true);
     } catch (error) {
       console.error('Failed to create referral:', error);
-      alert('Failed to create referral. Please try again.');
+      const msg = error instanceof Error ? error.message : 'Failed to create referral. Please try again.';
+      setSubmitError(msg);
     }
   };
 
@@ -343,22 +346,9 @@ export default function CreateReferral() {
           Ask the patient to present this referral ID at the receiving hospital
           so staff can quickly find the referral.
         </p>
-        {queuedPayload && (
-          <p
-            className={`mt-3 text-[11px] text-center max-w-lg ${isDark ? "text-surface-500" : "text-surface-400"}`}
-          >
-            API payload prepared for <code>POST /api/v1/referrals</code> with
-            priority <strong>{queuedPayload.priority}</strong> and consent{" "}
-            <strong>
-              {queuedPayload.consentGiven ? "confirmed" : "missing"}
-            </strong>
-            .
-          </p>
-        )}
         <button
           onClick={() => {
             setForm(emptyForm);
-            setQueuedPayload(null);
             setCreatedReferralId("");
             setSubmitted(false);
             setStep(1);
@@ -806,6 +796,13 @@ export default function CreateReferral() {
                 </p>
               )}
             </div>
+
+            {submitError && (
+              <div className="mt-4 p-3 rounded-lg bg-red-500/15 border border-red-500/20 text-red-500 flex items-start gap-2">
+                <IconAlertTriangle size={18} className="shrink-0 mt-0.5" />
+                <p className="text-sm font-medium">{submitError}</p>
+              </div>
+            )}
 
             <div className="flex gap-3 mt-5">
               <button
