@@ -4,13 +4,14 @@ import { useLanguage } from '../../context/LanguageContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useAuth } from '../../context/AuthContext'
 import { useReferrals } from '../../context/ReferralContext'
-import { trmsApi, type ApiFacility, type Department } from '../../lib/trmsApi'
+import { TrmsApiError, trmsApi, toDisplayReferralId, type ApiFacility, type Department } from '../../lib/trmsApi'
 import StatusBadge from '../../components/StatusBadge'
 import Modal from '../../components/Modal'
 import {
     IconClipboardList,
     IconFileText,
     IconHash,
+    IconSearch,
 } from '@tabler/icons-react'
 
 type ConfirmAction = 'accept' | 'reject' | 'forward' | 'cancel'
@@ -23,6 +24,7 @@ export default function MyReferrals() {
     const { user } = useAuth()
     const { referrals, dischargeSummaries, refreshReferrals } = useReferrals()
     const [filter, setFilter] = useState<string>('all')
+    const [searchQuery, setSearchQuery] = useState('')
     const [selected, setSelected] = useState<string | null>(referralId || null)
     const [submitLoading, setSubmitLoading] = useState(false)
     const [submitError, setSubmitError] = useState('')
@@ -44,8 +46,27 @@ export default function MyReferrals() {
     // TODO (Backend Team): GET /api/referrals?createdBy={userId}&status={filter}
     const myRefs = referrals.filter(r => {
         if (filter !== 'all' && r.status !== filter) return false
-        return true
+        const search = searchQuery.trim().toLowerCase()
+        if (!search) return true
+        const displayReferralId = getDisplayReferralId(r).toLowerCase()
+        return (
+            r.patientName.toLowerCase().includes(search) ||
+            r.id.toLowerCase().includes(search) ||
+            displayReferralId.includes(search)
+        )
     })
+    const getDisplayReferralId = (referral: { referralCode?: string; id: string }) =>
+        toDisplayReferralId(referral.referralCode, referral.id)
+    const getForwardErrorMessage = (error: unknown): string => {
+        if (error instanceof TrmsApiError) {
+            if (error.status === 403) return 'You are not allowed to forward this referral.'
+            if (error.status === 404) return 'Referral or destination facility not found. Refresh and try again.'
+            if (error.status === 400) return error.message || 'Please select facility and enter forwarding reason.'
+            return error.message || 'Failed to forward referral.'
+        }
+        if (error instanceof Error && error.message) return error.message
+        return 'Failed to forward referral. Please try again.'
+    }
 
     React.useEffect(() => {
         if (referralId) {
@@ -222,8 +243,8 @@ export default function MyReferrals() {
             await refreshReferrals()
             setActionSuccess('Referral forwarded successfully.')
             return true
-        } catch (error: any) {
-            setActionError(error?.message || 'Failed to forward referral.')
+        } catch (error: unknown) {
+            setActionError(getForwardErrorMessage(error))
             return false
         } finally {
             setActionLoading(false)
@@ -306,12 +327,23 @@ export default function MyReferrals() {
                 {/* List */}
                 <div className="lg:col-span-2 space-y-2">
                     <div className={card}>
+                        <div className={`relative mb-3 rounded-lg border ${isDark ? 'border-surface-700 bg-surface-950' : 'border-surface-200 bg-surface-50'}`}>
+                            <IconSearch size={14} className={`absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-surface-500' : 'text-surface-400'}`} />
+                            <input
+                                value={searchQuery}
+                                onChange={(event) => setSearchQuery(event.target.value)}
+                                placeholder="Search by patient name or referral ID..."
+                                className={`w-full pl-9 pr-3 py-2.5 text-xs rounded-lg bg-transparent outline-none ${isDark ? 'text-surface-100 placeholder:text-surface-500' : 'text-surface-900 placeholder:text-surface-400'}`}
+                            />
+                        </div>
                         <div className="flex items-center gap-2 mb-3">
                             <IconClipboardList size={15} className="text-primary-400" />
                             <span className="text-sm font-semibold">{myRefs.length} referrals</span>
                         </div>
                         {myRefs.length === 0 ? (
-                            <p className="text-sm text-surface-500 text-center py-8">{t('mr.empty')}</p>
+                            <p className="text-sm text-surface-500 text-center py-8">
+                                {searchQuery.trim() ? 'No referrals match your search.' : t('mr.empty')}
+                            </p>
                         ) : (
                             <div className="space-y-2">
                                 {myRefs.map(ref => (
@@ -331,7 +363,7 @@ export default function MyReferrals() {
                                             <StatusBadge type="priority" value={ref.priority} />
                                         </div>
                                         <p className={`text-[10px] font-semibold uppercase tracking-wide ${isDark ? 'text-surface-500' : 'text-surface-400'}`}>
-                                            Referral ID: {ref.id}
+                                            Referral ID: {getDisplayReferralId(ref)}
                                         </p>
                                         <p className={`text-xs truncate ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>{ref.chiefComplaint}</p>
                                         <div className="flex items-center gap-2 mt-1.5">
@@ -364,7 +396,7 @@ export default function MyReferrals() {
                                 <IconHash size={16} className="text-primary-500" />
                                 <div>
                                     <p className={`text-[10px] font-semibold uppercase tracking-wide ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>Referral ID</p>
-                                    <p className="text-base font-bold tracking-wide">{selectedRef.id}</p>
+                                    <p className="text-base font-bold tracking-wide">{getDisplayReferralId(selectedRef)}</p>
                                 </div>
                             </div>
 
@@ -608,7 +640,7 @@ export default function MyReferrals() {
                         </p>
                         {selectedRef && (
                             <p className={`text-xs ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>
-                                Patient: <strong>{selectedRef.patientName}</strong> · Referral ID: <strong>{selectedRef.id}</strong>
+                                Patient: <strong>{selectedRef.patientName}</strong> · Referral ID: <strong>{getDisplayReferralId(selectedRef)}</strong>
                             </p>
                         )}
                         {confirmAction === 'reject' && rejectReason.trim() && (
