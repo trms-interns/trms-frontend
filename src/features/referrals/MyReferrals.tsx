@@ -14,7 +14,7 @@ import {
     IconSearch,
 } from '@tabler/icons-react'
 
-type ConfirmAction = 'accept' | 'reject' | 'forward' | 'cancel'
+type ConfirmAction = 'accept' | 'reject' | 'forward' | 'cancel' | 'confirm_outbound'
 
 export default function MyReferrals() {
     const navigate = useNavigate()
@@ -41,11 +41,17 @@ export default function MyReferrals() {
     const [facilities, setFacilities] = useState<ApiFacility[]>([])
     const [forwardFacilityId, setForwardFacilityId] = useState('')
     const [forwardingNote, setForwardingNote] = useState('')
+    const [direction, setDirection] = useState<'all' | 'incoming' | 'outgoing'>('all')
     const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
 
     // TODO (Backend Team): GET /api/referrals?createdBy={userId}&status={filter}
     const myRefs = referrals.filter(r => {
         if (filter !== 'all' && r.status !== filter) return false
+        
+        // Direction filtering
+        if (direction === 'incoming' && r.receivingFacilityId !== user?.facilityId) return false
+        if (direction === 'outgoing' && r.referringFacilityId !== user?.facilityId) return false
+
         const search = searchQuery.trim().toLowerCase()
         if (!search) return true
         const displayReferralId = getDisplayReferralId(r).toLowerCase()
@@ -137,8 +143,13 @@ export default function MyReferrals() {
     )
     const canEditSentReferral = Boolean(
         selectedRef &&
-        ['draft', 'pending', 'pending_routing'].includes(selectedRef.status) &&
+        ['draft', 'pending', 'pending_routing', 'awaiting_outbound_review'].includes(selectedRef.status) &&
         selectedRef.referringUserId === user?.id,
+    )
+    const canConfirmOutbound = Boolean(
+        selectedRef &&
+        selectedRef.status === 'awaiting_outbound_review' &&
+        user?.role === 'Liaison Officer'
     )
 
     const card = `rounded-2xl border p-5 ${isDark ? 'bg-surface-900 border-surface-800' : 'bg-white border-surface-200'}`
@@ -227,6 +238,24 @@ export default function MyReferrals() {
         }
     }
 
+    const handleConfirmOutbound = async (): Promise<boolean> => {
+        if (!selectedRef || !canConfirmOutbound) return false
+        try {
+            setActionLoading(true)
+            setActionError('')
+            setActionSuccess('')
+            await trmsApi.confirmReferral(selectedRef.id)
+            await refreshReferrals()
+            setActionSuccess('Referral confirmed and sent successfully.')
+            return true
+        } catch (error: any) {
+            setActionError(error?.message || 'Failed to confirm referral.')
+            return false
+        } finally {
+            setActionLoading(false)
+        }
+    }
+
     const handleForwardReferral = async (): Promise<boolean> => {
         if (!selectedRef || !canForwardReferral || !forwardFacilityId || !forwardingNote.trim()) {
             return false
@@ -263,6 +292,8 @@ export default function MyReferrals() {
             ok = await handleForwardReferral()
         } else if (confirmAction === 'cancel') {
             ok = await handleCancelReferral()
+        } else if (confirmAction === 'confirm_outbound') {
+            ok = await handleConfirmOutbound()
         }
 
         if (ok) {
@@ -277,6 +308,8 @@ export default function MyReferrals() {
                 ? 'Confirm Rejection'
                 : confirmAction === 'forward'
                     ? 'Confirm Forward'
+                : confirmAction === 'confirm_outbound'
+                    ? 'Confirm Internal Review'
                 : 'Confirm Deletion'
 
     const confirmMessage =
@@ -286,6 +319,8 @@ export default function MyReferrals() {
                 ? 'Are you sure you want to reject this referral?'
                 : confirmAction === 'forward'
                     ? 'Are you sure you want to forward this referral?'
+                : confirmAction === 'confirm_outbound'
+                    ? 'Are you sure you want to confirm and send this referral to the receiving facility?'
                 : 'Are you sure you want to delete this sent referral?'
 
     const confirmButtonLabel =
@@ -295,6 +330,8 @@ export default function MyReferrals() {
                 ? (actionLoading ? 'Rejecting...' : 'Yes, Reject')
                 : confirmAction === 'forward'
                     ? (actionLoading ? 'Forwarding...' : 'Yes, Forward')
+                : confirmAction === 'confirm_outbound'
+                    ? (actionLoading ? 'Confirming...' : 'Yes, Confirm & Send')
                 : (cancelLoading ? 'Deleting...' : 'Yes, Delete Referral')
 
     const confirmButtonClass =
@@ -304,6 +341,8 @@ export default function MyReferrals() {
                 ? 'bg-red-600 hover:bg-red-700'
                 : confirmAction === 'forward'
                     ? 'bg-amber-600 hover:bg-amber-700'
+                : confirmAction === 'confirm_outbound'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
                 : 'bg-red-700 hover:bg-red-800'
 
     const isConfirmBusy =
@@ -315,12 +354,26 @@ export default function MyReferrals() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <h2 className="text-2xl font-bold">{t('mr.title')}</h2>
                 <div className="flex gap-1 flex-wrap">
-                    {['all', 'draft', 'pending', 'pending_routing', 'accepted', 'forwarded', 'completed', 'rejected'].map(v => (
+                    {['all', 'draft', 'pending', 'pending_routing', 'awaiting_outbound_review', 'accepted', 'forwarded', 'completed', 'rejected'].map(v => (
                         <button key={v} onClick={() => setFilter(v)} className={filterCls(v)}>
-                            {v === 'all' ? t('mr.all') : v}
+                            {v === 'all' ? t('mr.all') : v.replace(/_/g, ' ')}
                         </button>
                     ))}
                 </div>
+            </div>
+
+            <div className="flex items-center gap-2 mb-6 p-1 rounded-xl bg-surface-900/50 border border-surface-800 w-fit">
+                {['all', 'incoming', 'outgoing'].map(d => (
+                    <button
+                        key={d}
+                        onClick={() => setDirection(d as any)}
+                        className={`px-6 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${direction === d 
+                            ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/20' 
+                            : 'text-surface-500 hover:text-surface-300'}`}
+                    >
+                        {d}
+                    </button>
+                ))}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
@@ -409,10 +462,21 @@ export default function MyReferrals() {
                                     <p className="text-[10px] font-semibold text-surface-400 uppercase tracking-wide">{t('ref.clinicalSummary')}</p>
                                     <p className={`text-sm mt-0.5 leading-relaxed ${isDark ? 'text-surface-300' : 'text-surface-700'}`}>{selectedRef.clinicalSummary}</p>
                                 </div>
-                                {selectedRef.primaryDiagnosis && (
-                                    <div>
-                                        <p className="text-[10px] font-semibold text-surface-400 uppercase tracking-wide">{t('ref.primaryDiagnosis')}</p>
-                                        <p className="text-sm mt-0.5">{selectedRef.primaryDiagnosis}</p>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className={`p-3 rounded-xl border ${isDark ? 'border-surface-800 bg-surface-950/50' : 'border-surface-100 bg-surface-50/50'}`}>
+                                        <p className="text-[10px] font-semibold text-surface-500 uppercase tracking-wide">Sent From</p>
+                                        <p className="text-sm font-medium mt-1">{selectedRef.referringFacility}</p>
+                                    </div>
+                                    <div className={`p-3 rounded-xl border ${isDark ? 'border-surface-800 bg-surface-950/50' : 'border-surface-100 bg-surface-50/50'}`}>
+                                        <p className="text-[10px] font-semibold text-surface-500 uppercase tracking-wide">Sent To</p>
+                                        <p className="text-sm font-medium mt-1">{selectedRef.receivingFacility || '—'}</p>
+                                    </div>
+                                </div>
+
+                                {selectedRef.receivingDepartmentId && (
+                                    <div className={`p-3 rounded-xl border ${isDark ? 'border-surface-800 bg-surface-950/50' : 'border-surface-100 bg-surface-50/50'}`}>
+                                        <p className="text-[10px] font-semibold text-surface-500 uppercase tracking-wide">Assigned Department</p>
+                                        <p className="text-sm font-medium mt-1">{selectedRef.department || '—'}</p>
                                     </div>
                                 )}
                                 <div className={`flex gap-4 text-xs ${isDark ? 'text-surface-400' : 'text-surface-600'}`}>
@@ -494,6 +558,28 @@ export default function MyReferrals() {
                                     </div>
                                     {cancelError && (
                                         <p className="text-xs text-red-500 mt-2">{cancelError}</p>
+                                    )}
+                                </div>
+                            )}
+
+                            {canConfirmOutbound && (
+                                <div className="mt-5 p-4 rounded-xl border space-y-3 border-primary-500/20 bg-primary-500/5">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-primary-500">Internal Review Action</p>
+                                    <p className="text-xs text-surface-400">As a Liaison Officer, you must confirm this referral before it is sent to the receiving facility.</p>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setConfirmAction('confirm_outbound')}
+                                            disabled={actionLoading}
+                                            className="px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+                                        >
+                                            {actionLoading ? 'Confirming...' : 'Confirm & Send Referral'}
+                                        </button>
+                                    </div>
+                                    {actionError && (
+                                        <p className="text-xs text-red-500">{actionError}</p>
+                                    )}
+                                    {actionSuccess && (
+                                        <p className="text-xs text-emerald-500">{actionSuccess}</p>
                                     )}
                                 </div>
                             )}

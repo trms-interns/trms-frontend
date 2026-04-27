@@ -128,7 +128,7 @@ export default function Triage() {
     }, [user?.facilityId])
 
     const triageReferrals = referrals.filter(
-        r => ['pending', 'forwarded'].includes(r.status) && !resolvedReferrals[r.id]
+        r => r.status.toLowerCase() === 'pending' && !resolvedReferrals[r.id]
     )
     const filteredQueueReferrals = triageReferrals.filter((referral) => {
         if (queueFilter !== 'all' && referral.priority !== queueFilter) return false
