@@ -19,6 +19,7 @@ import {
     IconSettings,
     IconUsers,
     IconKey,
+    IconArrowsLeftRight,
 } from '@tabler/icons-react'
 
 function monthOffsetValue(offset: number): string {
@@ -57,6 +58,16 @@ export default function FacilityAdminDashboard() {
     const [confirmDeleteDepartment, setConfirmDeleteDepartment] = useState<Department | null>(null)
     const [resetPasswordUser, setResetPasswordUser] = useState<ApiUser | null>(null)
     const [resettingUserPassword, setResettingUserPassword] = useState(false)
+    const [showAddUser, setShowAddUser] = useState(false)
+    const [savingUser, setSavingUser] = useState(false)
+    const [newUser, setNewUser] = useState({
+        fullName: '',
+        username: '',
+        role: 'department_head' as 'department_head' | 'liaison_officer',
+        departmentId: '',
+        initialPassword: '',
+    })
+    const [newUserErrors, setNewUserErrors] = useState<Partial<Record<'fullName' | 'username' | 'role' | 'departmentId' | 'initialPassword', string>>>({})
     const [resetPasswordForm, setResetPasswordForm] = useState({
         password: '',
         confirmPassword: '',
@@ -154,6 +165,17 @@ export default function FacilityAdminDashboard() {
             type: 'clinical',
         })
         setAddDeptError('')
+    }
+
+    const resetNewUserForm = () => {
+        setNewUser({
+            fullName: '',
+            username: '',
+            role: 'department_head',
+            departmentId: '',
+            initialPassword: '',
+        })
+        setNewUserErrors({})
     }
 
     const card = `rounded-2xl border p-5 ${isDark ? 'bg-surface-900 border-surface-800' : 'bg-white border-surface-200'}`
@@ -531,6 +553,37 @@ export default function FacilityAdminDashboard() {
         }
     }
 
+    const handleCreateUser = async () => {
+        const errors: Partial<Record<'fullName' | 'username' | 'role' | 'departmentId' | 'initialPassword', string>> = {}
+        if (!newUser.fullName.trim()) errors.fullName = 'Full name is required.'
+        if (!newUser.username.trim()) errors.username = 'Username is required.'
+        if (!newUser.role) errors.role = 'Role is required.'
+        if (!newUser.departmentId) errors.departmentId = 'Department is required.'
+        if (!newUser.initialPassword.trim()) errors.initialPassword = 'Initial password is required.'
+        setNewUserErrors(errors)
+
+        if (Object.keys(errors).length > 0) return
+
+        try {
+            setSavingUser(true)
+            await trmsApi.createUser({
+                fullName: newUser.fullName.trim(),
+                username: newUser.username.trim(),
+                role: newUser.role,
+                facilityId: user?.facilityId || facility?.id || '',
+                departmentId: newUser.departmentId,
+                initialPassword: newUser.initialPassword,
+            })
+            await loadFacilityAdminData()
+            setShowAddUser(false)
+            resetNewUserForm()
+        } catch (error: any) {
+            setUserActionError(error?.message || 'Failed to create user.')
+        } finally {
+            setSavingUser(false)
+        }
+    }
+
     const toggleDepartmentSort = (key: DepartmentSortKey) => {
         if (departmentSortKey === key) {
             setDepartmentSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'))
@@ -770,8 +823,21 @@ export default function FacilityAdminDashboard() {
             {tab === 'users' && (
                 <div className={card}>
                     <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-sm font-bold">Department Heads ({facilityManagedUsers.length})</h3>
+                        <h3 className="text-sm font-bold">Facility Users ({users.length})</h3>
+                        <button
+                            onClick={() => {
+                                resetNewUserForm()
+                                setUserActionError('')
+                                setShowAddUser(true)
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary-700 text-white hover:bg-primary-600 transition-colors"
+                        >
+                            <IconPlus size={13} /> Add User
+                        </button>
                     </div>
+                    {userActionError && (
+                        <p className="mb-3 text-xs text-red-500 font-medium">{userActionError}</p>
+                    )}
                     {loading ? (
                         <p className="text-sm text-surface-500">Loading users...</p>
                     ) : facilityManagedUsers.length === 0 ? (
@@ -789,11 +855,11 @@ export default function FacilityAdminDashboard() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {facilityManagedUsers.map((u) => (
+                                    {users.filter(u => u.facilityId === (user?.facilityId || facility?.id)).map((u) => (
                                         <tr key={u.id} className={`border-b last:border-0 ${isDark ? 'border-surface-800' : 'border-surface-100'}`}>
                                             <td className="py-3 font-medium">{u.fullName}</td>
                                             <td className="py-3 text-surface-500">{u.username}</td>
-                                            <td className="py-3 text-surface-500">Department Head</td>
+                                            <td className="py-3 text-surface-500">{apiRoleToAppRole(u.role)}</td>
                                             <td className="py-3">
                                                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${u.active === false
                                                     ? 'bg-surface-500/15 text-surface-400 border-surface-500/25'
@@ -1174,43 +1240,73 @@ export default function FacilityAdminDashboard() {
                         }}
                         className="space-y-4"
                     >
+                        <div className="mb-6 p-4 rounded-xl border border-primary-500/20 bg-primary-500/5">
+                            <label className="text-xs font-semibold text-primary-400 uppercase tracking-widest mb-3 block">Department Purpose</label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setNewDepartment(curr => ({ ...curr, type: 'clinical', name: '' }))
+                                        setAddDeptError('')
+                                    }}
+                                    className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${newDepartment.type === 'clinical' ? 'border-primary-500 bg-primary-500/10 text-primary-300' : 'border-surface-700 bg-surface-900/50 text-surface-500 hover:border-surface-600'}`}
+                                >
+                                    <IconBuilding size={20} />
+                                    <span className="text-xs font-bold">Clinical Unit</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={departments.some(d => d.type === 'liaison')}
+                                    onClick={() => {
+                                        setNewDepartment(curr => ({ ...curr, type: 'liaison', name: 'Liaison Unit' }))
+                                        setAddDeptError('')
+                                    }}
+                                    className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${newDepartment.type === 'liaison' ? 'border-primary-500 bg-primary-500/10 text-primary-300' : 'border-surface-700 bg-surface-900/50 text-surface-500 hover:border-surface-600 disabled:opacity-30 disabled:cursor-not-allowed'}`}
+                                >
+                                    <IconArrowsLeftRight size={20} />
+                                    <span className="text-xs font-bold">Liaison Unit</span>
+                                </button>
+                            </div>
+                            {departments.some(d => d.type === 'liaison') && (
+                                <p className="text-[10px] text-surface-500 mt-2 text-center">A Liaison Unit already exists for this facility.</p>
+                            )}
+                        </div>
+
                         <FormField
                             label="Department Name"
                             required
                             placeholder="e.g. Surgery"
                             value={newDepartment.name}
+                            readOnly={newDepartment.type === 'liaison'}
                             onChange={(e) => {
-                                setNewDepartment((current) => ({ ...current, name: e.target.value }))
+                                if (newDepartment.type !== 'liaison') {
+                                    setNewDepartment((current) => ({ ...current, name: e.target.value }))
+                                }
                                 setAddDeptError('')
                             }}
                         />
-                        <FormField
-                            label="Facility ID"
-                            required
-                            value={newDepartment.facilityId || user?.facilityId || facility?.id || ''}
-                            onChange={(e) => setNewDepartment((current) => ({ ...current, facilityId: e.target.value }))}
-                            hint="Auto-filled from your assigned facility."
-                        />
-                        <FormField
-                            label="Admin Name"
-                            required
-                            placeholder="e.g. Surgery Head"
-                            value={newDepartment.adminName}
-                            onChange={(e) => {
-                                setNewDepartment((current) => ({ ...current, adminName: e.target.value }))
-                                setAddDeptError('')
-                            }}
-                        />
-                        <FormField
-                            label="Admin Username"
-                            required
-                            placeholder="e.g. surgeryadmin"
-                            value={newDepartment.adminUsername}
-                            onChange={(e) => {
-                                setNewDepartment((current) => ({ ...current, adminUsername: e.target.value }))
-                                setAddDeptError('')
-                            }}
-                        />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <FormField
+                                label="Admin Name"
+                                required
+                                placeholder="e.g. Surgery Head"
+                                value={newDepartment.adminName}
+                                onChange={(e) => {
+                                    setNewDepartment((current) => ({ ...current, adminName: e.target.value }))
+                                    setAddDeptError('')
+                                }}
+                            />
+                            <FormField
+                                label="Admin Username"
+                                required
+                                placeholder="e.g. surgeryadmin"
+                                value={newDepartment.adminUsername}
+                                onChange={(e) => {
+                                    setNewDepartment((current) => ({ ...current, adminUsername: e.target.value }))
+                                    setAddDeptError('')
+                                }}
+                            />
+                        </div>
                         <FormField
                             label="Admin Password"
                             required
@@ -1222,17 +1318,6 @@ export default function FacilityAdminDashboard() {
                                 setAddDeptError('')
                             }}
                         />
-                        <FormField
-                            label="Department Type"
-                            as="select"
-                            required
-                            value={newDepartment.type}
-                            onChange={(e) => setNewDepartment((current) => ({ ...current, type: e.target.value as 'clinical' | 'liaison' }))}
-                            options={[
-                                { value: 'clinical', label: 'Clinical' },
-                                { value: 'liaison', label: 'Liaison' },
-                            ]}
-                        />
                         {addDeptError && (
                             <p className="text-xs text-red-500 font-medium">{addDeptError}</p>
                         )}
@@ -1242,7 +1327,7 @@ export default function FacilityAdminDashboard() {
                                 disabled={creatingDepartment}
                                 className="flex-1 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold hover:bg-primary-600 transition-colors disabled:opacity-60"
                             >
-                                {creatingDepartment ? 'Creating...' : 'Create Department'}
+                                {creatingDepartment ? 'Creating...' : `Create ${newDepartment.type === 'liaison' ? 'Liaison Unit' : 'Department'}`}
                             </button>
                             <button
                                 type="button"
@@ -1318,6 +1403,112 @@ export default function FacilityAdminDashboard() {
                                     setResetPasswordUser(null)
                                     setUserActionError('')
                                     setResetPasswordForm({ password: '', confirmPassword: '' })
+                                }}
+                                className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}
+                            >
+                                {t('common.cancel')}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+            {showAddUser && (
+                <Modal
+                    title="Add Facility User"
+                    icon={<div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-primary-500/20' : 'bg-primary-100'}`}><IconPlus size={14} className={isDark ? 'text-primary-300' : 'text-primary-600'} /></div>}
+                    onClose={() => {
+                        setShowAddUser(false)
+                        resetNewUserForm()
+                    }}
+                >
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault()
+                            void handleCreateUser()
+                        }}
+                        className="space-y-4"
+                    >
+                        <FormField
+                            label="Full Name"
+                            required
+                            placeholder="e.g. Ato Tesfay"
+                            value={newUser.fullName}
+                            onChange={(e) => {
+                                setNewUser((current) => ({ ...current, fullName: e.target.value }))
+                                setNewUserErrors((current) => ({ ...current, fullName: undefined }))
+                            }}
+                            error={newUserErrors.fullName}
+                        />
+                        <FormField
+                            label="Username"
+                            required
+                            placeholder="e.g. tesfay.t"
+                            value={newUser.username}
+                            onChange={(e) => {
+                                setNewUser((current) => ({ ...current, username: e.target.value }))
+                                setNewUserErrors((current) => ({ ...current, username: undefined }))
+                            }}
+                            error={newUserErrors.username}
+                        />
+                        <FormField
+                            label="Role"
+                            as="select"
+                            required
+                            value={newUser.role}
+                            onChange={(e) => {
+                                setNewUser((current) => ({ ...current, role: e.target.value as any }))
+                                setNewUserErrors((current) => ({ ...current, role: undefined }))
+                            }}
+                            error={newUserErrors.role}
+                            options={[
+                                { value: 'department_head', label: 'Department Head' },
+                                { value: 'liaison_officer', label: 'Liaison Officer' },
+                            ]}
+                        />
+                        <FormField
+                            label="Department"
+                            as="select"
+                            required
+                            value={newUser.departmentId}
+                            onChange={(e) => {
+                                setNewUser((current) => ({ ...current, departmentId: e.target.value }))
+                                setNewUserErrors((current) => ({ ...current, departmentId: undefined }))
+                            }}
+                            error={newUserErrors.departmentId}
+                            options={departments
+                                .filter(d => {
+                                    if (newUser.role === 'liaison_officer') return d.type === 'liaison';
+                                    if (newUser.role === 'department_head') return d.type === 'clinical' || !d.type;
+                                    return true;
+                                })
+                                .map((d) => ({ value: d.id, label: d.name }))
+                            }
+                        />
+                        <FormField
+                            label="Initial Password"
+                            required
+                            type="password"
+                            placeholder="Set initial password"
+                            value={newUser.initialPassword}
+                            onChange={(e) => {
+                                setNewUser((current) => ({ ...current, initialPassword: e.target.value }))
+                                setNewUserErrors((current) => ({ ...current, initialPassword: undefined }))
+                            }}
+                            error={newUserErrors.initialPassword}
+                        />
+                        <div className="flex gap-3 mt-4">
+                            <button
+                                type="submit"
+                                disabled={savingUser}
+                                className="flex-1 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold hover:bg-primary-600 transition-colors disabled:opacity-60"
+                            >
+                                {savingUser ? 'Creating...' : 'Create User'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowAddUser(false)
+                                    resetNewUserForm()
                                 }}
                                 className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}
                             >
