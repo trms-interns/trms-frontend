@@ -377,7 +377,7 @@ export interface ApiReferral {
     allergies?: string
     pastMedicalHistory?: string
     currentMedications?: string
-    status: 'draft' | 'pending' | 'pending_routing' | 'accepted' | 'rejected' | 'forwarded' | 'completed'
+    status: 'draft' | 'pending' | 'pending_routing' | 'awaiting_outbound_review' | 'accepted' | 'rejected' | 'forwarded' | 'completed'
     createdAt: string
     syncedAt?: string
     waitingTime?: string
@@ -764,6 +764,13 @@ export const trmsApi = {
     deleteReferral(referralId: string) {
         return apiRequest<void>(`/referrals/${referralId}`, {
             method: 'DELETE',
+            headers: getAuthHeaders(),
+        })
+    },
+
+    confirmReferral(referralId: string) {
+        return apiRequest<ApiReferral>(`/referrals/${referralId}/confirm`, {
+            method: 'POST',
             headers: getAuthHeaders(),
         })
     },
