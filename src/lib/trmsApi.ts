@@ -92,7 +92,7 @@ export interface CreateReferralRequest {
     allergies?: string
     pastMedicalHistory?: string
     currentMedications?: string
-    status?: 'draft' | 'pending'
+    status?: 'draft' | 'pending' | 'pending_sending'
 }
 
 export interface CreateReferralFormValues {
@@ -746,7 +746,15 @@ export const trmsApi = {
         return this.updateReferral(referralId, { ...payload, status: 'REJECTED' })
     },
 
-    forwardReferral(referralId: string, payload: Omit<ForwardReferralRequest, 'status'>) {
+    async routeReferral(referralId: string, receivingFacilityId: string): Promise<ApiReferral> {
+        return apiRequest<ApiReferral>(`/referrals/${referralId}/route`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ receivingFacilityId }),
+        })
+    },
+
+    async forwardReferral(referralId: string, payload: Omit<ForwardReferralRequest, 'status'>) {
         return this.updateReferral(referralId, { ...payload, status: 'FORWARDED' })
     },
 

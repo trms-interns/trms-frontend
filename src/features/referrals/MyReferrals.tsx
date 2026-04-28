@@ -20,6 +20,7 @@ export default function MyReferrals() {
     const navigate = useNavigate()
     const { referralId } = useParams<{ referralId?: string }>()
     const { t } = useLanguage()
+    const isLiaison = useAuth().user?.role === 'Liaison Officer'
     const { isDark } = useTheme()
     const { user } = useAuth()
     const { referrals, dischargeSummaries, refreshReferrals } = useReferrals()
@@ -45,6 +46,16 @@ export default function MyReferrals() {
 
     // TODO (Backend Team): GET /api/referrals?createdBy={userId}&status={filter}
     const myRefs = referrals.filter(r => {
+        if (isLiaison) {
+            // Processed = handled by this liaison OR outbound from this facility (routed/forwarded)
+            const wasHandled = r.acceptedByUserId === user?.id || r.rejectedByUserId === user?.id
+            const wasSent = r.referringFacilityId === user?.facilityId && !['draft', 'pending_sending'].includes(r.status)
+            if (!wasHandled && !wasSent) return false
+        } else {
+            // For others, show referrals they created
+            if (r.referringUserId !== user?.id) return false
+        }
+
         if (filter !== 'all' && r.status !== filter) return false
         const search = searchQuery.trim().toLowerCase()
         if (!search) return true
@@ -313,9 +324,12 @@ export default function MyReferrals() {
     return (
         <div className="space-y-5 animate-fade-in">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <h2 className="text-2xl font-bold">{t('mr.title')}</h2>
+                <h2 className="text-xl font-bold">{isLiaison ? t('nav.processedReferrals') : t('mr.title')}</h2>
                 <div className="flex gap-1 flex-wrap">
-                    {['all', 'draft', 'pending', 'pending_routing', 'accepted', 'forwarded', 'completed', 'rejected'].map(v => (
+                    {['all', 'draft', 'pending', 'pending_sending', 'accepted', 'forwarded', 'completed', 'rejected'].filter(status => {
+                        if (isLiaison) return !['draft', 'pending_sending'].includes(status)
+                        return true
+                    }).map(v => (
                         <button key={v} onClick={() => setFilter(v)} className={filterCls(v)}>
                             {v === 'all' ? t('mr.all') : v}
                         </button>

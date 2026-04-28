@@ -19,7 +19,7 @@ export interface Referral {
     receivingFacility: string
     receivingDepartmentId?: string
     priority: 'emergency' | 'urgent' | 'routine'
-    status: 'draft' | 'pending' | 'synced' | 'failed' | 'accepted' | 'rejected' | 'forwarded' | 'completed' | 'pending_routing'
+    status: 'draft' | 'pending' | 'synced' | 'failed' | 'accepted' | 'rejected' | 'forwarded' | 'completed' | 'pending_routing' | 'pending_sending'
     chiefComplaint: string
     clinicalSummary: string
     primaryDiagnosis?: string

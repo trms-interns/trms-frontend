@@ -242,14 +242,11 @@ export default function CreateReferral() {
     if (form.phone.trim() && !ETHIOPIAN_PHONE_REGEX.test(form.phone.trim())) {
       e.phone = "Phone number must be in the format +251912345678.";
     }
-    if (!form.receivingFacility) e.receivingFacility = t("common.required");
-    if (isOwnFacilitySelected) {
+    // Receiving facility and department are now optional for clinicians; Liaison will route later.
+    if (form.receivingFacility && isOwnFacilitySelected) {
       e.receivingFacility =
         "Receiving facility cannot be your own facility. Please choose another facility.";
     }
-    if (!form.receivingDepartmentId)
-      e.receivingDepartmentId = t("common.required");
-    if (!form.serviceType.trim()) e.serviceType = t("common.required");
     if (selectedService?.status === "unavailable") {
       e.serviceType =
         "Selected service is unavailable at this facility. Choose another service.";
@@ -285,7 +282,7 @@ export default function CreateReferral() {
     setSubmitError(null);
     const payload = {
       ...buildCreateReferralPayload(form),
-      status: mode,
+      status: mode === 'pending' ? 'pending_sending' : 'draft',
     };
     try {
       const response = await trmsApi.createReferral(payload);
@@ -512,7 +509,6 @@ export default function CreateReferral() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 label={t("ref.receivingFacility")}
-                required
                 as="select"
                 value={form.receivingFacility}
                 onChange={(e) => {
@@ -547,7 +543,6 @@ export default function CreateReferral() {
               />
               <FormField
                 label="Receiving Department"
-                required
                 as="select"
                 value={form.receivingDepartmentId}
                 onChange={(e) =>
@@ -586,7 +581,6 @@ export default function CreateReferral() {
               )}
               <FormField
                 label="Service Type"
-                required
                 as="select"
                 value={form.serviceType}
                 onChange={(e) =>
@@ -822,7 +816,7 @@ export default function CreateReferral() {
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold hover:bg-primary-600 transition-colors"
               >
                 <IconSend size={14} />{" "}
-                {isEditMode ? "Save Update as Pending" : "Submit as Pending"}
+                {isEditMode ? "Save Update & Submit for Routing" : "Submit for Routing"}
               </button>
             </div>
           </div>
