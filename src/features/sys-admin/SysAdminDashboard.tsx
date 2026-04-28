@@ -1547,7 +1547,14 @@ export default function SysAdminDashboard() {
                                 setNewUserErrors((current) => ({ ...current, departmentId: undefined }))
                             }}
                             error={newUserErrors.departmentId}
-                            options={departments.map((department) => ({ value: department.id, label: department.name }))}
+                            options={departments
+                                .filter(d => {
+                                    if (newUser.role === 'liaison_officer') return d.type === 'liaison';
+                                    if (['doctor', 'hew', 'department_head'].includes(newUser.role)) return d.type === 'clinical' || !d.type;
+                                    return true;
+                                })
+                                .map((department) => ({ value: department.id, label: department.name }))
+                            }
                             disabled={newUser.role === 'facility_admin'}
                             hint={newUser.role === 'facility_admin' ? 'Facility administrators can be created without assigning a department.' : undefined}
                         />

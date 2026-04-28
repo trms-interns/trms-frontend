@@ -59,7 +59,6 @@ interface NavItem {
 const roleNavMap: Record<UserRole, NavItem[]> = {
   "Liaison Officer": [
     { path: "/", icon: IconClipboardList, labelKey: "nav.triage" },
-    { path: "/referrals/new", icon: IconSend, labelKey: "nav.sendReferral" },
     { path: "/referrals/my", icon: IconList, labelKey: "nav.myReferrals" },
     { path: "/directory", icon: IconBuilding, labelKey: "nav.directory" },
     { path: "/dashboard", icon: IconLayoutDashboard, labelKey: "nav.dashboard" },

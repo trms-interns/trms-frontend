@@ -620,9 +620,13 @@ export default function DeptHeadDashboard() {
                                 setAddUserError('')
                             }}
                             options={[
-                                { value: 'doctor', label: 'Doctor' },
-                                { value: 'liaison_officer', label: 'Liaison Officer' },
-                                { value: 'hew', label: 'Health Extension Worker' },
+                                ...(user?.role === 'Department Head' ? [
+                                    { value: 'doctor', label: 'Doctor' },
+                                    { value: 'hew', label: 'Health Extension Worker' },
+                                ] : []),
+                                ...(user?.role === 'Liaison Officer' ? [
+                                    { value: 'liaison_officer', label: 'Liaison Officer' },
+                                ] : []),
                             ]}
                         />
                         <FormField
@@ -734,9 +738,13 @@ export default function DeptHeadDashboard() {
                                 setEditingError('')
                             }}
                             options={[
-                                { value: 'doctor', label: 'Doctor' },
-                                { value: 'liaison_officer', label: 'Liaison Officer' },
-                                { value: 'hew', label: 'Health Extension Worker' },
+                                ...(user?.role === 'Department Head' ? [
+                                    { value: 'doctor', label: 'Doctor' },
+                                    { value: 'hew', label: 'Health Extension Worker' },
+                                ] : []),
+                                ...(user?.role === 'Liaison Officer' ? [
+                                    { value: 'liaison_officer', label: 'Liaison Officer' },
+                                ] : []),
                             ]}
                         />
                         {editingError && <p className="text-xs text-red-500 font-medium">{editingError}</p>}
