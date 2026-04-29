@@ -11,6 +11,8 @@ import {
     IconShield,
     IconUser,
     IconFileText,
+    IconSearch,
+    IconDownload,
 } from '@tabler/icons-react'
 
 export default function Analytics() {
@@ -21,6 +23,7 @@ export default function Analytics() {
     const [loading, setLoading] = useState(true)
     const [auditOffset, setAuditOffset] = useState(0)
     const [hasMoreAuditLogs, setHasMoreAuditLogs] = useState(true)
+    const [searchQuery, setSearchQuery] = useState('')
 
     const fetchAuditLogs = async (reset = false) => {
         if (!reset && !hasMoreAuditLogs) return
@@ -29,13 +32,15 @@ export default function Analytics() {
         try {
             if (reset) setLoading(true)
             const currentOffset = reset ? 0 : auditOffset
-            const data = await trmsApi.getAuditLogs(undefined, 10, currentOffset)
+            // If searchQuery looks like a UUID, we can pass it to the backend
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(searchQuery)
+            const data = await trmsApi.getAuditLogs(isUuid ? searchQuery : undefined, 10, currentOffset)
             
-            if (reset) {
-                setAuditLogs(data)
-            } else {
-                setAuditLogs(prev => [...prev, ...data])
-            }
+            setAuditLogs(prev => {
+                const combined = reset ? data : [...prev, ...data];
+                // Use Map to filter duplicates by ID
+                return Array.from(new Map(combined.map(item => [item.id, item])).values());
+            });
             
             setAuditOffset(currentOffset + data.length)
             setHasMoreAuditLogs(data.length === 10)
@@ -44,6 +49,69 @@ export default function Analytics() {
         } finally {
             setLoading(false)
         }
+    }
+
+    const handleExportCsv = () => {
+        if (auditLogs.length === 0) return
+        
+        const headers = ['User', 'Action', 'Record ID', 'Timestamp']
+        const rows = auditLogs.map(log => [
+            log.userName || log.userId || 'Unknown',
+            log.action,
+            log.targetId || '',
+            log.timestamp ? new Date(log.timestamp).toISOString() : ''
+        ])
+        
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        ].join('\n')
+        
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+        const link = document.createElement('a')
+        const url = URL.createObjectURL(blob)
+        link.setAttribute('href', url)
+        link.setAttribute('download', `audit-logs-${new Date().toISOString().split('T')[0]}.csv`)
+        link.style.visibility = 'hidden'
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+    }
+
+    const filteredLogs = searchQuery && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(searchQuery)
+        ? auditLogs.filter(log => 
+            (log.userName && log.userName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+            (log.action && log.action.toLowerCase().includes(searchQuery.toLowerCase()))
+          )
+        : auditLogs
+
+    // Grouping logic: Group consecutive logs by same user within 2 minutes
+    const groupedLogs: any[] = []
+    if (filteredLogs.length > 0) {
+        let currentGroup: any = null
+        
+        filteredLogs.forEach((log) => {
+            const logTime = new Date(log.timestamp).getTime()
+            
+            if (!currentGroup) {
+                currentGroup = { ...log, actions: [log.action], ids: [log.id], count: 1, startTime: logTime }
+                groupedLogs.push(currentGroup)
+            } else {
+                const timeDiff = Math.abs(currentGroup.startTime - logTime)
+                const sameUser = currentGroup.userId === log.userId
+                const isRecent = timeDiff < 2 * 60 * 1000 // 2 minutes window
+                
+                if (sameUser && isRecent) {
+                    if (!currentGroup.actions.includes(log.action)) {
+                        currentGroup.actions.push(log.action)
+                    }
+                    currentGroup.count++
+                } else {
+                    currentGroup = { ...log, actions: [log.action], ids: [log.id], count: 1, startTime: logTime }
+                    groupedLogs.push(currentGroup)
+                }
+            }
+        })
     }
 
     useEffect(() => {
@@ -70,10 +138,33 @@ export default function Analytics() {
 
             {/* Audit log */}
             <div className={cardClass}>
-                <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                    <IconShield size={14} className="text-primary-400" />
-                    {t('ana.complianceAudit')}
-                </h3>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                    <h3 className="text-sm font-semibold flex items-center gap-2">
+                        <IconShield size={14} className="text-primary-400" />
+                        {t('ana.complianceAudit')}
+                    </h3>
+                    
+                    <div className="flex items-center gap-2">
+                        <div className="relative">
+                            <IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-500" />
+                            <input 
+                                type="text"
+                                placeholder="Search logs..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && void fetchAuditLogs(true)}
+                                className={`pl-9 pr-4 py-1.5 rounded-lg text-xs border outline-none transition-colors ${isDark ? 'bg-surface-900 border-surface-700 focus:border-primary-500' : 'bg-surface-50 border-surface-200 focus:border-primary-500'}`}
+                            />
+                        </div>
+                        <button 
+                            onClick={handleExportCsv}
+                            className={`p-1.5 rounded-lg border transition-colors ${isDark ? 'border-surface-700 hover:bg-surface-800 text-surface-400' : 'border-surface-200 hover:bg-surface-50 text-surface-500'}`}
+                            title="Export to CSV"
+                        >
+                            <IconDownload size={16} />
+                        </button>
+                    </div>
+                </div>
                 {loading && auditLogs.length === 0 ? (
                     <p className="text-sm text-surface-500">Loading audit logs...</p>
                 ) : auditLogs.length === 0 ? (
@@ -90,19 +181,38 @@ export default function Analytics() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {auditLogs.map((entry) => (
-                                    <tr key={entry.id} className={`border-b last:border-0 ${isDark ? 'border-surface-700/50' : 'border-surface-100'}`}>
+                                {groupedLogs.map((group) => (
+                                    <tr key={group.id} className={`border-b last:border-0 ${isDark ? 'border-surface-700/50' : 'border-surface-100'}`}>
                                         <td className="py-2.5">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-6 h-6 rounded-full bg-primary-500/15 flex items-center justify-center">
                                                     <IconUser size={10} className="text-primary-400" />
                                                 </div>
-                                                <span className="font-medium">{entry.user || entry.userId || 'Unknown'}</span>
+                                                <span className="font-medium">{group.userName || group.userId || 'Unknown'}</span>
                                             </div>
                                         </td>
-                                        <td className="py-2.5 text-surface-400">{entry.action}</td>
-                                        <td className="py-2.5"><code className={`px-1.5 py-0.5 rounded text-[10px] ${isDark ? 'bg-surface-700' : 'bg-surface-100'}`}>{entry.recordId || entry.targetId || '—'}</code></td>
-                                        <td className="py-2.5 text-surface-500">{entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '—'}</td>
+                                        <td className="py-2.5 text-surface-400">
+                                            <div className="flex flex-wrap gap-1">
+                                                {group.actions.map((act: string, idx: number) => (
+                                                    <span key={idx} className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-bold ${isDark ? 'bg-surface-700 text-surface-300' : 'bg-surface-100 text-surface-600'}`}>
+                                                        {act}
+                                                    </span>
+                                                ))}
+                                                {group.count > group.actions.length && (
+                                                    <span className="text-[10px] text-surface-500 self-center ml-1">
+                                                        (+{group.count - group.actions.length} more)
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="py-2.5">
+                                            <code className={`px-1.5 py-0.5 rounded text-[10px] ${isDark ? 'bg-surface-700' : 'bg-surface-100'}`}>
+                                                {group.targetId ? group.targetId.slice(0, 8) + '...' : 'Global'}
+                                            </code>
+                                        </td>
+                                        <td className="py-2.5 text-surface-500 text-right whitespace-nowrap">
+                                            {new Date(group.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>

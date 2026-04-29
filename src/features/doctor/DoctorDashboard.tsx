@@ -1,9 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useLanguage } from '../../context/LanguageContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useAuth } from '../../context/AuthContext'
 import { useReferrals } from '../../context/ReferralContext'
-import { trmsApi } from '../../lib/trmsApi'
+import { trmsApi, type Department } from '../../lib/trmsApi'
 import StatusBadge from '../../components/StatusBadge'
 import DashboardMiniChart from '../../components/DashboardMiniChart'
 import {
@@ -13,6 +13,8 @@ import {
     IconAlertTriangle,
     IconSend,
     IconX,
+    IconCircleX,
+    IconArrowsLeftRight,
 } from '@tabler/icons-react'
 
 export default function DoctorDashboard() {
@@ -28,6 +30,20 @@ export default function DoctorDashboard() {
     const [dischargeDate, setDischargeDate] = useState(new Date().toISOString().slice(0, 10))
     const [acceptingReferralId, setAcceptingReferralId] = useState<string | null>(null)
     const [acceptError, setAcceptError] = useState('')
+    
+    // New states for reject / forward
+    const [departments, setDepartments] = useState<Department[]>([])
+    const [actionModal, setActionModal] = useState<'reject' | 'forward' | null>(null)
+    const [rejectReason, setRejectReason] = useState('')
+    const [forwardDepartmentId, setForwardDepartmentId] = useState('')
+    const [forwardNote, setForwardNote] = useState('')
+    const [actionLoading, setActionLoading] = useState(false)
+
+    useEffect(() => {
+        if (user?.facilityId) {
+            trmsApi.getDepartments(user.facilityId).then(setDepartments).catch(console.error)
+        }
+    }, [user?.facilityId])
 
     // Filter referrals to doctor's department (accepted referrals needing attention)
     const deptReferrals = referrals.filter((r) => {
@@ -69,6 +85,19 @@ export default function DoctorDashboard() {
         setDischargeDate(new Date().toISOString().slice(0, 10))
     }
 
+    const openActionModal = (type: 'reject' | 'forward', refId: string) => {
+        setActiveReferralId(refId)
+        setActionModal(type)
+        setRejectReason('')
+        setForwardDepartmentId('')
+        setForwardNote('')
+    }
+
+    const closeActionModal = () => {
+        setActiveReferralId(null)
+        setActionModal(null)
+    }
+
     const submitCompletion = () => {
         if (!activeReferralId || !finalDiagnosis.trim() || !treatmentSummary.trim() || !medicationsPrescribed.trim() || !followUpInstructions.trim() || !dischargeDate) return
         completeReferral({
@@ -94,6 +123,37 @@ export default function DoctorDashboard() {
             setAcceptError(error?.message || 'Failed to accept referral as clinician.')
         } finally {
             setAcceptingReferralId(null)
+        }
+    }
+
+    const handleReject = async () => {
+        if (!activeReferralId || !rejectReason.trim()) return
+        try {
+            setActionLoading(true)
+            await trmsApi.rejectReferral(activeReferralId, { reason: rejectReason.trim() })
+            await refreshReferrals()
+            closeActionModal()
+        } catch (error) {
+            console.error('Failed to reject referral:', error)
+        } finally {
+            setActionLoading(false)
+        }
+    }
+
+    const handleForward = async () => {
+        if (!activeReferralId || !forwardDepartmentId || !forwardNote.trim()) return
+        try {
+            setActionLoading(true)
+            await trmsApi.internalForwardReferral(activeReferralId, { 
+                departmentId: forwardDepartmentId,
+                reason: forwardNote.trim(),
+            })
+            await refreshReferrals()
+            closeActionModal()
+        } catch (error) {
+            console.error('Failed to forward referral:', error)
+        } finally {
+            setActionLoading(false)
         }
     }
 
@@ -146,21 +206,37 @@ export default function DoctorDashboard() {
                                 <StatusBadge type="priority" value={ref.priority} />
                                 <StatusBadge type="sync" value={ref.status} />
                                 {ref.status === 'accepted' && !ref.clinicianAcceptedAt && (
-                                    <button
-                                        onClick={() => handleClinicianAccept(ref.id)}
-                                        disabled={acceptingReferralId === ref.id}
-                                        className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${isDark ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'} disabled:opacity-60`}
-                                    >
-                                        {acceptingReferralId === ref.id ? 'Accepting...' : 'Accept Case'}
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => handleClinicianAccept(ref.id)}
+                                            disabled={acceptingReferralId === ref.id}
+                                            className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${isDark ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'} disabled:opacity-60`}
+                                        >
+                                            {acceptingReferralId === ref.id ? 'Accepting...' : 'Accept Case'}
+                                        </button>
+                                        <button
+                                            onClick={() => openActionModal('reject', ref.id)}
+                                            className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${isDark ? 'bg-red-500/15 text-red-300 hover:bg-red-500/25' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+                                        >
+                                            Reject
+                                        </button>
+                                    </div>
                                 )}
                                 {ref.status === 'accepted' && ref.clinicianAcceptedAt && (
-                                    <button
-                                        onClick={() => openCompletionModal(ref.id)}
-                                        className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${isDark ? 'bg-primary-500/15 text-primary-300 hover:bg-primary-500/25' : 'bg-primary-100 text-primary-700 hover:bg-primary-200'}`}
-                                    >
-                                        {t('doc.dischargeSummary')}
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => openCompletionModal(ref.id)}
+                                            className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${isDark ? 'bg-primary-500/15 text-primary-300 hover:bg-primary-500/25' : 'bg-primary-100 text-primary-700 hover:bg-primary-200'}`}
+                                        >
+                                            {t('doc.dischargeSummary')}
+                                        </button>
+                                        <button
+                                            onClick={() => openActionModal('forward', ref.id)}
+                                            className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${isDark ? 'bg-[#2b4968]/20 text-[#7ba0c8] hover:bg-[#2b4968]/40' : 'bg-[#2b4968]/10 text-[#2b4968] hover:bg-[#2b4968]/20'}`}
+                                        >
+                                            Internal Forward
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         ))}
@@ -248,6 +324,95 @@ export default function DoctorDashboard() {
                                 >
                                     {t('common.cancel')}
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Reject Modal */}
+            {actionModal === 'reject' && activeReferral && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className={`w-full max-w-lg rounded-2xl shadow-2xl border ${isDark ? 'bg-surface-900 border-surface-800' : 'bg-white border-surface-200'}`}>
+                        <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? 'border-surface-800' : 'border-surface-200'}`}>
+                            <div className="flex items-center gap-3">
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isDark ? 'bg-red-500/20 text-red-300' : 'bg-red-100 text-red-600'}`}>
+                                    <IconCircleX size={16} />
+                                </div>
+                                <h3 className="text-base font-bold">Reject Referral</h3>
+                            </div>
+                            <button onClick={closeActionModal} className={`p-1.5 rounded-lg ${isDark ? 'text-surface-400 hover:bg-surface-800' : 'text-surface-500 hover:bg-surface-100'}`}><IconX size={16} /></button>
+                        </div>
+                        <div className="p-5">
+                            <label className="text-xs font-semibold text-surface-400 mb-1 block">Reason for Rejection</label>
+                            <textarea
+                                className={textareaCls}
+                                rows={4}
+                                value={rejectReason}
+                                onChange={e => setRejectReason(e.target.value)}
+                                placeholder="Please provide a clinical reason..."
+                            />
+                            <div className="flex gap-3 mt-4">
+                                <button
+                                    onClick={handleReject}
+                                    disabled={actionLoading || !rejectReason.trim()}
+                                    className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-50"
+                                >
+                                    Confirm Rejection
+                                </button>
+                                <button onClick={closeActionModal} className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-700 text-surface-300' : 'border-surface-300 text-surface-700'}`}>Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Internal Forward Modal */}
+            {actionModal === 'forward' && activeReferral && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className={`w-full max-w-lg rounded-2xl shadow-2xl border ${isDark ? 'bg-surface-900 border-surface-800' : 'bg-white border-surface-200'}`}>
+                        <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? 'border-surface-800' : 'border-surface-200'}`}>
+                            <div className="flex items-center gap-3">
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isDark ? 'bg-[#2b4968]/20 text-[#7ba0c8]' : 'bg-[#2b4968]/10 text-[#2b4968]'}`}>
+                                    <IconArrowsLeftRight size={16} />
+                                </div>
+                                <h3 className="text-base font-bold">Internal Forward</h3>
+                            </div>
+                            <button onClick={closeActionModal} className={`p-1.5 rounded-lg ${isDark ? 'text-surface-400 hover:bg-surface-800' : 'text-surface-500 hover:bg-surface-100'}`}><IconX size={16} /></button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div>
+                                <label className="text-xs font-semibold text-surface-400 mb-1 block">Target Department</label>
+                                <select
+                                    className={inputCls}
+                                    value={forwardDepartmentId}
+                                    onChange={e => setForwardDepartmentId(e.target.value)}
+                                >
+                                    <option value="">Select department</option>
+                                    {departments.filter(d => d.id !== user?.departmentId).map(d => (
+                                        <option key={d.id} value={d.id}>{d.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-semibold text-surface-400 mb-1 block">Reason for Forwarding <span className="text-red-500">*</span></label>
+                                <textarea
+                                    className={textareaCls}
+                                    rows={3}
+                                    value={forwardNote}
+                                    onChange={e => setForwardNote(e.target.value)}
+                                    placeholder="e.g. Patient requires cardiology consultation not available in general surgery."
+                                />
+                            </div>
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    onClick={handleForward}
+                                    disabled={actionLoading || !forwardDepartmentId || !forwardNote.trim()}
+                                    className="flex-1 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold hover:bg-primary-800 transition-colors disabled:opacity-50"
+                                >
+                                    Transfer Patient
+                                </button>
+                                <button onClick={closeActionModal} className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-700 text-surface-300' : 'border-surface-300 text-surface-700'}`}>Cancel</button>
                             </div>
                         </div>
                     </div>

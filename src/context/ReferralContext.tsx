@@ -111,6 +111,11 @@ function apiReferralToReferral(
         estimatedWaitingTime: apiReferral.waitingTime,
         appointmentDate: apiReferral.appointmentDate ? new Date(apiReferral.appointmentDate).toLocaleDateString() : undefined,
         clinicianAcceptedAt: apiReferral.clinicianAcceptedAt,
+        clinicianAcceptedByUserId: apiReferral.clinicianAcceptedByUserId,
+        clinicianAcceptedByUserName: apiReferral.clinicianAcceptedByUser?.fullName || undefined,
+        clinicianAcceptedByUserDepartment: apiReferral.clinicianAcceptedByUser?.departmentName || undefined,
+        clinicianAcceptedByUserPhone: apiReferral.clinicianAcceptedByUser?.phone || undefined,
+        clinicianAcceptedByUserEmail: apiReferral.clinicianAcceptedByUser?.email || undefined,
         acceptedByUserId: apiReferral.acceptedByUserId,
         acceptedByUserName: apiReferral.acceptedByUser?.fullName || undefined,
         acceptedByUserDepartment: apiReferral.acceptedByUser?.departmentName || undefined,
@@ -156,6 +161,9 @@ export function ReferralProvider({ children }: { children: ReactNode }) {
     const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(
         () => localStorage.getItem('trms-last-sync-at'),
     )
+    const [facilityNames, setFacilityNames] = useState<Record<string, string>>({})
+    const [departmentNames, setDepartmentNames] = useState<Record<string, string>>({})
+    const [enrichmentLoaded, setEnrichmentLoaded] = useState(false)
 
     const refreshReferrals = async () => {
         const hasApiSession = isAuthenticated && Boolean(trmsApi.getToken())
@@ -170,34 +178,14 @@ export function ReferralProvider({ children }: { children: ReactNode }) {
         try {
             const apiReferrals = await trmsApi.getReferrals()
 
-            const facilityNameById: Record<string, string> = {}
-            const departmentNameById: Record<string, string> = {}
-
-            try {
-                const facilities = await trmsApi.getFacilities()
-                facilities.forEach((facility) => {
-                    facilityNameById[facility.id] = facility.name
-                })
-
-                const departmentLists = await Promise.all(
-                    facilities.map((facility) =>
-                        trmsApi.getDepartments(facility.id).catch(() => []),
-                    ),
-                )
-                departmentLists.flat().forEach((department) => {
-                    departmentNameById[department.id] = department.name
-                })
-            } catch {
-                // Best effort enrichment. If lookups fail, referrals still render with ids.
-            }
-
             const convertedReferrals = apiReferrals.map((referral) =>
                 apiReferralToReferral(referral, {
-                    facilityNameById,
-                    departmentNameById,
+                    facilityNameById: facilityNames,
+                    departmentNameById: departmentNames,
                 }),
             )
             setReferrals(convertedReferrals)
+
 
             const fetchedSummaries: DischargeSummary[] = []
             for (const apiRef of apiReferrals) {
@@ -222,8 +210,36 @@ export function ReferralProvider({ children }: { children: ReactNode }) {
         }
     }
 
+    const loadEnrichmentData = async () => {
+        if (!isAuthenticated || enrichmentLoaded) return
+        try {
+            const facilities = await trmsApi.getFacilities()
+            const fNames: Record<string, string> = {}
+            facilities.forEach(f => { fNames[f.id] = f.name })
+            setFacilityNames(fNames)
+
+            // Fetch departments for all facilities (now allowed in backend)
+            const deptLists = await Promise.all(
+                facilities.map(f => trmsApi.getDepartments(f.id).catch(() => []))
+            )
+            const dNames: Record<string, string> = {}
+            deptLists.flat().forEach(d => { dNames[d.id] = d.name })
+            setDepartmentNames(dNames)
+        } catch (err) {
+            console.error('Failed to load enrichment data:', err)
+        } finally {
+            setEnrichmentLoaded(true)
+        }
+    }
+
     useEffect(() => {
-        void refreshReferrals()
+        if (isAuthenticated) {
+            void loadEnrichmentData().then(() => refreshReferrals())
+        } else {
+            setEnrichmentLoaded(false)
+            setFacilityNames({})
+            setDepartmentNames({})
+        }
     }, [isAuthenticated])
 
   useEffect(() => {

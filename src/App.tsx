@@ -252,7 +252,12 @@ export default function App() {
 
     const targetReferralId = item.targetId?.trim();
     if (targetReferralId) {
-      navigate(`/referrals/my/${targetReferralId}`);
+      // For Liaisons, navigate to the Triage board (root) with a referralId query param
+      if (user?.role === 'Liaison Officer') {
+        navigate(`/?referralId=${targetReferralId}`);
+      } else {
+        navigate(`/referrals/my/${targetReferralId}`);
+      }
       setNotificationsOpen(false);
     }
   };
