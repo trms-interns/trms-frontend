@@ -59,8 +59,7 @@ interface NavItem {
 const roleNavMap: Record<UserRole, NavItem[]> = {
   "Liaison Officer": [
     { path: "/", icon: IconClipboardList, labelKey: "nav.triage" },
-    { path: "/referrals/new", icon: IconSend, labelKey: "nav.sendReferral" },
-    { path: "/referrals/my", icon: IconList, labelKey: "nav.myReferrals" },
+    { path: "/referrals/my", icon: IconList, labelKey: "nav.processedReferrals" },
     { path: "/directory", icon: IconBuilding, labelKey: "nav.directory" },
     { path: "/dashboard", icon: IconLayoutDashboard, labelKey: "nav.dashboard" },
     { path: "/analytics", icon: IconChartBar, labelKey: "nav.analytics" },
@@ -253,7 +252,12 @@ export default function App() {
 
     const targetReferralId = item.targetId?.trim();
     if (targetReferralId) {
-      navigate(`/referrals/my/${targetReferralId}`);
+      // For Liaisons, navigate to the Triage board (root) with a referralId query param
+      if (user?.role === 'Liaison Officer') {
+        navigate(`/?referralId=${targetReferralId}`);
+      } else {
+        navigate(`/referrals/my/${targetReferralId}`);
+      }
       setNotificationsOpen(false);
     }
   };
@@ -533,7 +537,7 @@ export default function App() {
       <main className="flex-1 min-h-screen flex flex-col">
         {/* Top bar */}
         <header
-          className={`sticky top-0 z-30 flex items-center gap-4 px-4 lg:px-6 h-14 border-b backdrop-blur-md ${isDark ? "bg-surface-950/80 border-surface-800" : "bg-white/80 border-surface-200"}`}
+          className={`sticky top-0 z-30 flex items-center gap-4 px-4 lg:px-6 h-14 border-b ${isDark ? "bg-surface-950 border-surface-800" : "bg-white border-surface-200"}`}
         >
           <button
             className="lg:hidden p-2 rounded-lg hover:bg-surface-800/50"

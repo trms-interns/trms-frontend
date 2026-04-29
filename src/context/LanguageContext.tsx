@@ -16,6 +16,7 @@ const translations: Record<string, Record<Lang, string>> = {
     'nav.analytics': { en: 'Analytics', ti: 'ትንተና' },
     'nav.sendReferral': { en: 'Send Referral', ti: 'ሪፈራል ስደድ' },
     'nav.myReferrals': { en: 'My Referrals', ti: 'ናተይ ሪፈራት' },
+    'nav.processedReferrals': { en: 'Processed Referrals', ti: 'ዝተዛዘሙ ሪፈራት' },
     'nav.patientQueue': { en: 'Patient Queue', ti: 'ሪጋ ሕሙማት' },
     'nav.userManagement': { en: 'User Management', ti: 'ኣጠቓቕማ ተጠቃምቲ' },
     'nav.referralOverview': { en: 'Referral Overview', ti: 'ጽሟቕ ሪፈራል' },
@@ -106,6 +107,8 @@ const translations: Record<string, Record<Lang, string>> = {
     // Triage
     'tri.title': { en: 'Triage Dashboard', ti: 'ዳሽቦርድ ትሪያጅ' },
     'tri.incoming': { en: 'Incoming Queue', ti: 'ዝመጽእ ሪጋ' },
+    'tri.outgoing': { en: 'Outgoing – Pending', ti: 'ዝወጽእ ሪጋ – ዝጽበ' },
+    'tri.routeReferral': { en: 'Route Referral', ti: 'ሪፈራል መምርሒ' },
     'tri.accept': { en: 'Accept', ti: 'ተቐበል' },
     'tri.reject': { en: 'Reject', ti: 'ኣይትቐበል' },
     'tri.redirect': { en: 'Forward', ti: 'ኣመሓላልፍ' },

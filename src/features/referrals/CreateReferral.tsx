@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useLanguage } from "../../context/LanguageContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
@@ -42,12 +42,12 @@ interface FormState {
 const emptyForm: FormState = {
   patientName: "",
   dateOfBirth: "",
-  gender: "",
+  gender: "Male",
   phone: "",
   receivingFacility: "",
   receivingDepartmentId: "",
   serviceType: "",
-  priority: "",
+  priority: "routine",
   reasonForReferral: "",
   clinicalSummary: "",
   primaryDiagnosis: "",
@@ -63,6 +63,7 @@ const ETHIOPIAN_PHONE_REGEX = /^\+251\d{9}$/;
 
 export default function CreateReferral() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { t } = useLanguage();
   const { isDark } = useTheme();
@@ -85,6 +86,7 @@ export default function CreateReferral() {
   );
   const [loadingDepartments, setLoadingDepartments] = useState(false);
   const [loadingFacilities, setLoadingFacilities] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [editPrefilled, setEditPrefilled] = useState(false);
 
   const editReferralId = searchParams.get("editReferralId")?.trim() || "";
@@ -234,6 +236,25 @@ export default function CreateReferral() {
     setEditPrefilled(true);
   }, [editPrefilled, editReferral, isEditMode]);
 
+  // Handle pre-fill from location state (for chaining referrals)
+  useEffect(() => {
+    const prefill = (location.state as any)?.prefill;
+    if (!prefill || editPrefilled) return;
+
+    setForm({
+      ...emptyForm,
+      patientName: prefill.patientName || "",
+      dateOfBirth: prefill.dateOfBirth || "",
+      gender: prefill.gender || "Male",
+      phone: prefill.phone || "",
+      priority: prefill.priority || "routine",
+      clinicalSummary: prefill.clinicalSummary || "",
+      primaryDiagnosis: prefill.primaryDiagnosis || "",
+      consent: true,
+    });
+    setEditPrefilled(true);
+  }, [location.state, editPrefilled]);
+
   const validate = (): boolean => {
     const e: Partial<Record<keyof FormState, string>> = {};
     if (!form.patientName.trim()) e.patientName = t("common.required");
@@ -242,18 +263,7 @@ export default function CreateReferral() {
     if (form.phone.trim() && !ETHIOPIAN_PHONE_REGEX.test(form.phone.trim())) {
       e.phone = "Phone number must be in the format +251912345678.";
     }
-    if (!form.receivingFacility) e.receivingFacility = t("common.required");
-    if (isOwnFacilitySelected) {
-      e.receivingFacility =
-        "Receiving facility cannot be your own facility. Please choose another facility.";
-    }
-    if (!form.receivingDepartmentId)
-      e.receivingDepartmentId = t("common.required");
-    if (!form.serviceType.trim()) e.serviceType = t("common.required");
-    if (selectedService?.status === "unavailable") {
-      e.serviceType =
-        "Selected service is unavailable at this facility. Choose another service.";
-    }
+    
     if (!form.priority) e.priority = t("common.required");
     if (!form.reasonForReferral.trim())
       e.reasonForReferral = t("common.required");
@@ -261,8 +271,18 @@ export default function CreateReferral() {
     if (!form.primaryDiagnosis.trim())
       e.primaryDiagnosis = t("common.required");
     if (!form.consent) e.consent = "Consent is required to proceed.";
+    
     setErrors(e);
-    return Object.keys(e).length === 0;
+    
+    if (Object.keys(e).length > 0) {
+      // If there are errors in Step 1, go back to Step 1
+      if (e.patientName || e.dateOfBirth || e.gender || e.phone) {
+        setStep(1);
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return false;
+    }
+    return true;
   };
 
   const validateStepOne = (): boolean => {
@@ -282,13 +302,38 @@ export default function CreateReferral() {
 
   const handleSubmit = async (mode: "draft" | "pending") => {
     if (!validate()) return;
+    setSubmitting(true);
     setSubmitError(null);
-    const payload = {
+    const payload: any = {
       ...buildCreateReferralPayload(form),
-      status: mode,
+      status: mode === 'pending' ? 'pending_sending' : 'draft',
+      receivingFacilityId: undefined, // Explicitly clear for doctor submission to enforce liaison review
+      receivingDepartmentId: undefined,
+      forwardingNote: (location.state as any)?.prefill?.parentReferralId 
+        ? `Re-referral linked to #${(location.state as any).prefill.parentReferralId}`
+        : undefined,
+      forwardedFromReferralId: (location.state as any)?.prefill?.parentReferralId || undefined,
     };
     try {
       const response = await trmsApi.createReferral(payload);
+      
+      // If this is a re-referral from a doctor, automatically close the parent referral
+      const parentId = (location.state as any)?.prefill?.parentReferralId;
+      if (parentId && mode === 'pending') {
+        try {
+          await trmsApi.addDischargeSummary(parentId, {
+            summary: `Patient re-referred to specialized hospital. New Referral ID: ${toDisplayReferralId(response.referralCode, response.id)}`,
+            finalDiagnosis: form.primaryDiagnosis || "Re-referral",
+            medicationsPrescribed: form.currentMedications || "As per previous records",
+            followUpInstructions: "Follow up at specialized facility",
+            dischargeDate: new Date().toISOString().split('T')[0],
+          });
+        } catch (closeError) {
+          console.error("Failed to auto-close parent referral:", closeError);
+          // We don't block the main flow if auto-closing fails, but we log it
+        }
+      }
+
       if (isEditMode && editReferralId) {
         try {
           await trmsApi.removeReferral(editReferralId);
@@ -300,10 +345,14 @@ export default function CreateReferral() {
       setSubmittedStatus(mode);
       await refreshReferrals();
       setSubmitted(true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {
       console.error('Failed to create referral:', error);
       const msg = error instanceof Error ? error.message : 'Failed to create referral. Please try again.';
       setSubmitError(msg);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -321,9 +370,7 @@ export default function CreateReferral() {
         >
           Referral for <strong>{form.patientName}</strong> has been{" "}
           {isEditMode ? "updated" : "saved"} with status{" "}
-          <strong>{submittedStatus.toUpperCase()}</strong>. It will be synced to{" "}
-          {selectedFacility?.name || "the receiving facility"} when connectivity
-          is available.
+          <strong>{submittedStatus === 'pending' ? 'SUBMITTED FOR ROUTING' : submittedStatus.toUpperCase()}</strong>. It will be reviewed by your facility's liaison officer.
         </p>
         <div
           className={`mt-4 flex items-center gap-2 rounded-xl border px-4 py-3 ${isDark ? "border-primary-500/20 bg-primary-500/10 text-surface-100" : "border-primary-200 bg-primary-50 text-surface-900"}`}
@@ -409,7 +456,11 @@ export default function CreateReferral() {
           className={`w-8 h-px ${isDark ? "bg-surface-700" : "bg-surface-300"}`}
         />
         <button
-          onClick={() => setStep(2)}
+          onClick={() => {
+            if (validateStepOne()) {
+              setStep(2);
+            }
+          }}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${step === 2 ? "bg-primary-500/15 text-primary-500" : isDark ? "text-surface-400" : "text-surface-500"}`}
         >
           <span
@@ -511,103 +562,6 @@ export default function CreateReferral() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
-                label={t("ref.receivingFacility")}
-                required
-                as="select"
-                value={form.receivingFacility}
-                onChange={(e) => {
-                  const value = (e.target as HTMLSelectElement).value;
-                  setForm((prev) => ({
-                    ...prev,
-                    receivingFacility: value,
-                    receivingDepartmentId: "",
-                    serviceType: "",
-                  }));
-                  setErrors((prev) => {
-                    const next = { ...prev };
-                    delete next.receivingFacility;
-                    delete next.receivingDepartmentId;
-                    delete next.serviceType;
-                    return next;
-                  });
-                }}
-                error={errors.receivingFacility}
-                options={facilities
-                  .filter(
-                    (f) =>
-                      !(
-                        (user?.facilityId && f.id === user.facilityId) ||
-                        f.name === user?.facility
-                      ),
-                  )
-                  .map((f) => ({
-                  value: f.id,
-                  label: `${f.name || "Unknown Facility"} (${f.location || "Unknown location"})`,
-                }))}
-              />
-              <FormField
-                label="Receiving Department"
-                required
-                as="select"
-                value={form.receivingDepartmentId}
-                onChange={(e) =>
-                  set(
-                    "receivingDepartmentId",
-                    (e.target as HTMLSelectElement).value,
-                  )
-                }
-                error={errors.receivingDepartmentId}
-                options={receivingDepartments.map((department) => ({
-                  value: department.id,
-                  label: department.name,
-                }))}
-                hint={
-                  !form.receivingFacility
-                    ? "Choose a receiving facility first."
-                    : receivingDepartments.length > 0
-                      ? "Choose the destination department."
-                      : "No departments found for this facility yet."
-                }
-                disabled={!form.receivingFacility}
-              />
-              {loadingFacilities && (
-                <p
-                  className={`text-[11px] ${isDark ? "text-surface-500" : "text-surface-500"}`}
-                >
-                  Loading facilities...
-                </p>
-              )}
-              {loadingDepartments && (
-                <p
-                  className={`text-[11px] ${isDark ? "text-surface-500" : "text-surface-500"}`}
-                >
-                  Loading departments...
-                </p>
-              )}
-              <FormField
-                label="Service Type"
-                required
-                as="select"
-                value={form.serviceType}
-                onChange={(e) =>
-                  set("serviceType", (e.target as HTMLSelectElement).value)
-                }
-                error={errors.serviceType}
-                options={(selectedFacility?.services || []).map((service) => ({
-                  value: service.serviceType,
-                  label:
-                    service.status === "limited" &&
-                    typeof service.estimatedDelayDays === "number"
-                      ? `${service.serviceType} (limited, ${service.estimatedDelayDays}d delay)`
-                      : `${service.serviceType} (${service.status})`,
-                }))}
-                hint={
-                  selectedFacility
-                    ? "Select the requested clinical service."
-                    : "Choose a receiving facility first."
-                }
-              />
-              <FormField
                 label={t("ref.priority")}
                 required
                 as="select"
@@ -624,52 +578,6 @@ export default function CreateReferral() {
               />
             </div>
 
-            {/* Service status warning — FD-04 / FD-05 */}
-            {selectedFacility && (
-              <div
-                className={`p-3 rounded-lg border space-y-1 ${isDark ? "bg-surface-950 border-surface-800" : "bg-surface-50 border-surface-200"}`}
-              >
-                <p className="text-[10px] font-semibold uppercase text-surface-400 tracking-wide">
-                  Service Status — {selectedFacility.name}
-                </p>
-                <div className="flex flex-wrap gap-2 mt-1">
-                  {selectedFacility.services?.map((d) => (
-                    <span
-                      key={d.id}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                        d.status === "available"
-                          ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/25"
-                          : d.status === "limited"
-                            ? "bg-amber-500/15 text-amber-500 border-amber-500/25"
-                            : "bg-red-500/15 text-red-500 border-red-500/25"
-                      }`}
-                    >
-                      {d.status === "unavailable" && (
-                        <IconAlertTriangle size={9} />
-                      )}
-                      {d.serviceType}: {d.status}
-                      {d.estimatedDelayDays
-                        ? ` (${d.estimatedDelayDays}d)`
-                        : ""}
-                    </span>
-                  ))}
-                </div>
-                {selectedFacility.services?.some(
-                  (d) => d.status === "unavailable",
-                ) && (
-                  <p className="text-[11px] text-amber-500 font-medium mt-2 flex items-center gap-1">
-                    <IconAlertTriangle size={12} /> Some services are
-                    unavailable at this facility. You may proceed or choose
-                    another.
-                  </p>
-                )}
-                {selectedService?.status === "unavailable" && (
-                  <p className="text-[11px] text-red-500 font-medium mt-2 flex items-center gap-1">
-                    <IconAlertTriangle size={12} /> Selected service is unavailable.
-                  </p>
-                )}
-              </div>
-            )}
 
             <FormField
               label={t("ref.reason")}
@@ -813,16 +721,22 @@ export default function CreateReferral() {
               </button>
               <button
                 onClick={() => handleSubmit("draft")}
-                className={`px-5 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? "border-surface-600 text-surface-300 hover:bg-surface-800" : "border-surface-300 text-surface-700 hover:bg-surface-100"} transition-colors`}
+                disabled={submitting}
+                className={`px-5 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? "border-surface-600 text-surface-300 hover:bg-surface-800" : "border-surface-300 text-surface-700 hover:bg-surface-100"} transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
               >
-                {isEditMode ? "Save Update as Draft" : "Save as Draft"}
+                {submitting ? "Saving..." : isEditMode ? "Save Update as Draft" : "Save as Draft"}
               </button>
               <button
                 onClick={() => handleSubmit("pending")}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold hover:bg-primary-600 transition-colors"
+                disabled={submitting}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold hover:bg-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <IconSend size={14} />{" "}
-                {isEditMode ? "Save Update as Pending" : "Submit as Pending"}
+                {submitting ? (
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <IconSend size={14} />
+                )}
+                {submitting ? "Submitting..." : isEditMode ? "Save Update & Submit for Routing" : "Submit for Routing"}
               </button>
             </div>
           </div>

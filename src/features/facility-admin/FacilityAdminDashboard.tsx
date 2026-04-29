@@ -54,6 +54,7 @@ export default function FacilityAdminDashboard() {
     const [serviceActionError, setServiceActionError] = useState('')
     const [userActionError, setUserActionError] = useState('')
     const [editingDepartment, setEditingDepartment] = useState<Department | null>(null)
+    const [viewingDepartment, setViewingDepartment] = useState<Department | null>(null)
     const [confirmDeleteDepartment, setConfirmDeleteDepartment] = useState<Department | null>(null)
     const [resetPasswordUser, setResetPasswordUser] = useState<ApiUser | null>(null)
     const [resettingUserPassword, setResettingUserPassword] = useState(false)
@@ -254,7 +255,7 @@ export default function FacilityAdminDashboard() {
             setCreatingDepartment(true)
             setAddDeptError('')
             await trmsApi.createDepartment({
-                name: newDepartment.name.trim(),
+                name: newDepartment.type === 'liaison' ? 'Liaison' : newDepartment.name.trim(),
                 facilityId,
                 adminName: newDepartment.adminName.trim(),
                 adminUsername: newDepartment.adminUsername.trim(),
@@ -474,13 +475,13 @@ export default function FacilityAdminDashboard() {
             users.filter(
                 (u) =>
                     u.facilityId === (user?.facilityId || facility?.id) &&
-                    u.role === 'department_head',
+                    (u.role === 'department_head' || u.role === 'liaison_officer'),
             ),
         [facility?.id, user?.facilityId, users],
     )
     const facilityChartData = [
         { label: 'Departments', value: departments.length, colorClass: 'bg-primary-600' },
-        { label: 'Dept Heads', value: facilityManagedUsers.length, colorClass: 'bg-emerald-500' },
+        { label: 'Heads/Liaisons', value: facilityManagedUsers.length, colorClass: 'bg-emerald-500' },
         {
             label: 'Services Up',
             value: facility?.services?.filter((service) => normalizeServiceStatus(service.status) === 'available').length || 0,
@@ -680,7 +681,9 @@ export default function FacilityAdminDashboard() {
                                         const isActive = dept.active !== false
                                         return (
                                             <tr key={dept.id} className={`border-b last:border-0 ${isDark ? 'border-surface-800' : 'border-surface-100'}`}>
-                                                <td className="py-3 font-medium">{dept.name}</td>
+                                                <td className="py-3 font-medium cursor-pointer hover:text-primary-500 transition-colors" onClick={() => setViewingDepartment(dept)}>
+                                                    {dept.name}
+                                                </td>
                                                 <td className="py-3">
                                                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${isActive
                                                         ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/25'
@@ -707,6 +710,13 @@ export default function FacilityAdminDashboard() {
                                                             {togglingDepartmentId === dept.id
                                                                 ? isActive ? 'Deactivating...' : 'Restoring...'
                                                                 : isActive ? 'Deactivate' : 'Restore'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setViewingDepartment(dept)}
+                                                            className={`w-8 h-8 rounded-lg transition-colors flex items-center justify-center ${isDark ? 'hover:bg-surface-800 text-surface-400' : 'hover:bg-surface-100 text-surface-500'}`}
+                                                            title="View details"
+                                                        >
+                                                            <IconBuilding size={13} />
                                                         </button>
                                                         <button
                                                             onClick={() => {
@@ -793,7 +803,7 @@ export default function FacilityAdminDashboard() {
                                         <tr key={u.id} className={`border-b last:border-0 ${isDark ? 'border-surface-800' : 'border-surface-100'}`}>
                                             <td className="py-3 font-medium">{u.fullName}</td>
                                             <td className="py-3 text-surface-500">{u.username}</td>
-                                            <td className="py-3 text-surface-500">Department Head</td>
+                                            <td className="py-3 text-surface-500">{u.role === 'liaison_officer' ? 'Liaison Officer' : 'Department Head'}</td>
                                             <td className="py-3">
                                                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${u.active === false
                                                     ? 'bg-surface-500/15 text-surface-400 border-surface-500/25'
@@ -1046,6 +1056,70 @@ export default function FacilityAdminDashboard() {
                 </div>
             )}
 
+            {/* View Department Details Modal */}
+            {viewingDepartment && (
+                <Modal
+                    title="Department Details"
+                    icon={<div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-primary-500/20' : 'bg-primary-100'}`}><IconBuilding size={14} className={isDark ? 'text-primary-300' : 'text-primary-600'} /></div>}
+                    onClose={() => setViewingDepartment(null)}
+                >
+                    <div className="space-y-4 py-2">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <p className="text-[10px] uppercase font-bold text-surface-400 tracking-wider">Department Name</p>
+                                <p className="text-sm font-semibold mt-0.5">{viewingDepartment.name}</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] uppercase font-bold text-surface-400 tracking-wider">Type</p>
+                                <p className="text-sm font-semibold mt-0.5">{(viewingDepartment.type || 'clinical').toUpperCase()}</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] uppercase font-bold text-surface-400 tracking-wider">Status</p>
+                                <p className="text-sm font-semibold mt-0.5">{viewingDepartment.active !== false ? 'Active' : 'Inactive'}</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] uppercase font-bold text-surface-400 tracking-wider">Facility</p>
+                                <p className="text-sm font-semibold mt-0.5">{facilities.find(f => f.id === viewingDepartment.facilityId)?.name || viewingDepartment.facilityId}</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] uppercase font-bold text-surface-400 tracking-wider">Department ID</p>
+                                <p className="text-xs font-mono mt-0.5 text-surface-500">{viewingDepartment.id}</p>
+                            </div>
+                        </div>
+
+                        <div className={`p-4 rounded-xl border ${isDark ? 'bg-surface-950 border-surface-800' : 'bg-surface-50 border-surface-200'}`}>
+                            <p className="text-[10px] uppercase font-bold text-surface-400 tracking-wider mb-2">Assigned Personnel (Heads/Liaisons)</p>
+                            {facilityManagedUsers.filter(u => u.departmentId === viewingDepartment.id).length === 0 ? (
+                                <p className="text-xs text-surface-500 italic">No head/liaison assigned to this department.</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {facilityManagedUsers.filter(u => u.departmentId === viewingDepartment.id).map(u => (
+                                        <div key={u.id} className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm font-medium">{u.fullName}</p>
+                                                <p className="text-[10px] text-surface-500">@{u.username} · {u.role === 'liaison_officer' ? 'Liaison Officer' : 'Dept Head'}</p>
+                                            </div>
+                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${u.active !== false ? 'bg-emerald-500/10 text-emerald-500' : 'bg-surface-500/10 text-surface-500'}`}>
+                                                {u.active !== false ? 'Active' : 'Inactive'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex justify-end pt-2">
+                            <button
+                                onClick={() => setViewingDepartment(null)}
+                                className={`px-5 py-2 rounded-lg text-sm font-semibold ${isDark ? 'bg-surface-800 text-surface-200 hover:bg-surface-700' : 'bg-surface-100 text-surface-700 hover:bg-surface-200'} transition-colors`}
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
             {/* Edit Department Modal */}
             {editingDepartment && (
                 <Modal
@@ -1177,12 +1251,14 @@ export default function FacilityAdminDashboard() {
                         <FormField
                             label="Department Name"
                             required
-                            placeholder="e.g. Surgery"
-                            value={newDepartment.name}
+                            placeholder={newDepartment.type === 'liaison' ? 'Liaison' : 'e.g. Surgery'}
+                            value={newDepartment.type === 'liaison' ? 'Liaison' : newDepartment.name}
+                            disabled={newDepartment.type === 'liaison'}
                             onChange={(e) => {
                                 setNewDepartment((current) => ({ ...current, name: e.target.value }))
                                 setAddDeptError('')
                             }}
+                            hint={newDepartment.type === 'liaison' ? 'Liaison department name is fixed.' : 'Unique name for the clinical service.'}
                         />
                         <FormField
                             label="Facility ID"
@@ -1227,11 +1303,19 @@ export default function FacilityAdminDashboard() {
                             as="select"
                             required
                             value={newDepartment.type}
-                            onChange={(e) => setNewDepartment((current) => ({ ...current, type: e.target.value as 'clinical' | 'liaison' }))}
+                            onChange={(e) => {
+                                const type = e.target.value as 'clinical' | 'liaison';
+                                setNewDepartment((current) => ({ 
+                                    ...current, 
+                                    type,
+                                    name: type === 'liaison' ? 'Liaison' : current.name 
+                                }))
+                            }}
                             options={[
-                                { value: 'clinical', label: 'Clinical' },
-                                { value: 'liaison', label: 'Liaison' },
+                                { value: 'clinical', label: 'Clinical Service' },
+                                { value: 'liaison', label: 'Liaison Office' },
                             ]}
+                            hint={newDepartment.type === 'liaison' ? 'Only one Liaison office per facility allowed. Liaison Officers handle inter-facility coordination.' : 'Clinical departments provide patient care and specialty services.'}
                         />
                         {addDeptError && (
                             <p className="text-xs text-red-500 font-medium">{addDeptError}</p>

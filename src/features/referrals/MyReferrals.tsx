@@ -20,6 +20,7 @@ export default function MyReferrals() {
     const navigate = useNavigate()
     const { referralId } = useParams<{ referralId?: string }>()
     const { t } = useLanguage()
+    const isLiaison = useAuth().user?.role === 'Liaison Officer'
     const { isDark } = useTheme()
     const { user } = useAuth()
     const { referrals, dischargeSummaries, refreshReferrals } = useReferrals()
@@ -45,6 +46,17 @@ export default function MyReferrals() {
 
     // TODO (Backend Team): GET /api/referrals?createdBy={userId}&status={filter}
     const myRefs = referrals.filter(r => {
+        if (isLiaison) {
+            // Include if either referring OR receiving facility is the user's facility
+            const isRelated = r.referringFacilityId === user?.facilityId || r.receivingFacilityId === user?.facilityId
+            if (!isRelated) return false
+            // For Liaisons, we filter out drafts in this view
+            if (r.status === 'draft') return false
+        } else {
+            // For others, show referrals they created
+            if (r.referringUserId !== user?.id) return false
+        }
+
         if (filter !== 'all' && r.status !== filter) return false
         const search = searchQuery.trim().toLowerCase()
         if (!search) return true
@@ -120,24 +132,24 @@ export default function MyReferrals() {
     }, [canReviewAnyFacility, selectedRef, user])
     const canTakeLifecycleAction = Boolean(
         selectedRef &&
-        ['pending', 'forwarded'].includes(selectedRef.status) &&
+        ['pending_receiving', 'forwarded'].includes(selectedRef.status) &&
         isReceivingFacilityReferral &&
         ['Liaison Officer', 'Doctor', 'System Administrator'].includes(user?.role || ''),
     )
     const canForwardReferral = Boolean(
         selectedRef &&
-        ['pending', 'forwarded'].includes(selectedRef.status) &&
+        ['pending_receiving', 'forwarded'].includes(selectedRef.status) &&
         isReceivingFacilityReferral &&
         ['Liaison Officer', 'System Administrator'].includes(user?.role || ''),
     )
     const canCancelSentReferral = Boolean(
         selectedRef &&
-        ['draft', 'pending', 'pending_routing'].includes(selectedRef.status) &&
+        ['draft', 'pending_receiving', 'pending_sending'].includes(selectedRef.status) &&
         selectedRef.referringUserId === user?.id,
     )
     const canEditSentReferral = Boolean(
         selectedRef &&
-        ['draft', 'pending', 'pending_routing'].includes(selectedRef.status) &&
+        ['draft', 'pending_receiving', 'pending_sending'].includes(selectedRef.status) &&
         selectedRef.referringUserId === user?.id,
     )
 
@@ -310,14 +322,28 @@ export default function MyReferrals() {
         confirmAction === 'cancel' ? cancelLoading : actionLoading
     const confirmError = confirmAction === 'cancel' ? cancelError : actionError
 
+    const statusLabels: Record<string, string> = {
+        all: t('mr.all'),
+        draft: 'Draft',
+        pending_sending: 'Pending Routing',
+        pending_receiving: 'Pending Acceptance',
+        accepted: 'Accepted',
+        rejected: 'Rejected',
+        forwarded: 'Forwarded',
+        completed: 'Completed'
+    }
+
     return (
         <div className="space-y-5 animate-fade-in">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <h2 className="text-2xl font-bold">{t('mr.title')}</h2>
+                <h2 className="text-xl font-bold">{isLiaison ? t('nav.processedReferrals') : t('mr.title')}</h2>
                 <div className="flex gap-1 flex-wrap">
-                    {['all', 'draft', 'pending', 'pending_routing', 'accepted', 'forwarded', 'completed', 'rejected'].map(v => (
+                    {Object.keys(statusLabels).filter(status => {
+                        if (isLiaison) return status !== 'draft'
+                        return true
+                    }).map(v => (
                         <button key={v} onClick={() => setFilter(v)} className={filterCls(v)}>
-                            {v === 'all' ? t('mr.all') : v}
+                            {statusLabels[v]}
                         </button>
                     ))}
                 </div>
@@ -425,6 +451,7 @@ export default function MyReferrals() {
                                     </div>
                                 )}
 
+
                                 <div className={`rounded-xl border p-3 text-xs space-y-1.5 ${isDark ? 'border-surface-700 bg-surface-950' : 'border-surface-200 bg-surface-50'}`}>
                                     <p className="font-semibold uppercase tracking-wide text-surface-500">Referring User</p>
                                     <p>ID: <strong className={isDark ? 'text-surface-200' : 'text-surface-800'}>{selectedRef.referringUserId || '—'}</strong></p>
@@ -436,12 +463,23 @@ export default function MyReferrals() {
 
                                 {(selectedRef.acceptedByUserId || selectedRef.acceptedByUserName) && (
                                     <div className={`rounded-xl border p-3 text-xs space-y-1.5 ${isDark ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-emerald-200 bg-emerald-50'}`}>
-                                        <p className="font-semibold uppercase tracking-wide text-emerald-600">Accepted By</p>
+                                        <p className="font-semibold uppercase tracking-wide text-emerald-600">Liaison Accepted By</p>
                                         <p>ID: <strong className={isDark ? 'text-surface-200' : 'text-surface-800'}>{selectedRef.acceptedByUserId || '—'}</strong></p>
                                         <p>Name: <strong className={isDark ? 'text-surface-200' : 'text-surface-800'}>{selectedRef.acceptedByUserName || '—'}</strong></p>
                                         <p>Department: <strong className={isDark ? 'text-surface-200' : 'text-surface-800'}>{selectedRef.acceptedByUserDepartment || '—'}</strong></p>
                                         <p>Phone: <strong className={isDark ? 'text-surface-200' : 'text-surface-800'}>{selectedRef.acceptedByUserPhone || '—'}</strong></p>
                                         <p>Email: <strong className={isDark ? 'text-surface-200' : 'text-surface-800'}>{selectedRef.acceptedByUserEmail || '—'}</strong></p>
+                                    </div>
+                                )}
+
+                                {(selectedRef.clinicianAcceptedByUserId || selectedRef.clinicianAcceptedByUserName) && (
+                                    <div className={`rounded-xl border p-3 text-xs space-y-1.5 ${isDark ? 'border-primary-500/30 bg-primary-500/5' : 'border-primary-200 bg-primary-50'}`}>
+                                        <p className="font-semibold uppercase tracking-wide text-primary-600">Clinician Accepted By</p>
+                                        <p>ID: <strong className={isDark ? 'text-surface-200' : 'text-surface-800'}>{selectedRef.clinicianAcceptedByUserId || '—'}</strong></p>
+                                        <p>Name: <strong className={isDark ? 'text-surface-200' : 'text-surface-800'}>{selectedRef.clinicianAcceptedByUserName || '—'}</strong></p>
+                                        <p>Department: <strong className={isDark ? 'text-surface-200' : 'text-surface-800'}>{selectedRef.clinicianAcceptedByUserDepartment || '—'}</strong></p>
+                                        <p>Phone: <strong className={isDark ? 'text-surface-200' : 'text-surface-800'}>{selectedRef.clinicianAcceptedByUserPhone || '—'}</strong></p>
+                                        <p>Email: <strong className={isDark ? 'text-surface-200' : 'text-surface-800'}>{selectedRef.clinicianAcceptedByUserEmail || '—'}</strong></p>
                                     </div>
                                 )}
 

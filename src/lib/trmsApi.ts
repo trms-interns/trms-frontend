@@ -79,7 +79,7 @@ export interface CreateReferralRequest {
     patientDob: string
     patientGender: ApiPatientGender
     patientPhone?: string
-    receivingFacilityId: string
+    receivingFacilityId?: string
     receivingDepartmentId?: string
     serviceType?: string
     priority: ApiReferralPriority
@@ -92,7 +92,9 @@ export interface CreateReferralRequest {
     allergies?: string
     pastMedicalHistory?: string
     currentMedications?: string
-    status?: 'draft' | 'pending'
+    status?: 'draft' | 'pending_receiving' | 'pending_sending'
+    forwardedFromReferralId?: string
+    forwardingNote?: string
 }
 
 export interface CreateReferralFormValues {
@@ -366,9 +368,6 @@ export interface ApiReferral {
     receivingFacility?: { id: string; name?: string }
     receivingDepartment?: { id: string; name?: string }
     referringUser?: ApiReferralUserSummary
-    acceptedByUser?: ApiReferralUserSummary
-    rejectedByUser?: ApiReferralUserSummary
-    clinicianAcceptedByUser?: ApiReferralUserSummary
     priority: ApiReferralPriority
     clinicalSummary: string
     primaryDiagnosis: string
@@ -377,21 +376,22 @@ export interface ApiReferral {
     allergies?: string
     pastMedicalHistory?: string
     currentMedications?: string
-    status: 'draft' | 'pending' | 'pending_routing' | 'accepted' | 'rejected' | 'forwarded' | 'completed'
+    status: 'draft' | 'pending_sending' | 'pending_receiving' | 'accepted' | 'rejected' | 'forwarded' | 'completed'
     createdAt: string
     syncedAt?: string
     waitingTime?: string
-    rejectionReason?: string
-    acceptedAt?: string
-    acceptedByUserId?: string
-    rejectedByUserId?: string
-    forwardingNote?: string
-    forwardedFromReferralId?: string
-    appointmentDate?: string
-    clinicianAcceptedAt?: string
-    clinicianAcceptedByUserId?: string
-    consentRecord?: any
-    dischargeSummary?: any
+    acceptedAt?: string | null
+    acceptedByUserId?: string | null
+    acceptedByUser?: ApiReferralUserSummary
+    rejectedByUserId?: string | null
+    rejectedByUser?: ApiReferralUserSummary
+    rejectionReason?: string | null
+    clinicianAcceptedAt?: string | null
+    clinicianAcceptedByUserId?: string | null
+    clinicianAcceptedByUser?: ApiReferralUserSummary
+    dischargeSummary?: DischargeSummary | null
+    forwardingNote?: string | null
+    forwardedFromReferralId?: string | null
 }
 
 export interface ApiReferralUserSummary {
@@ -413,6 +413,7 @@ export interface AcceptReferralRequest {
     waitingTime?: string
     appointmentDate?: string
     note?: string
+    priority?: 'emergency' | 'urgent' | 'routine'
 }
 
 export interface RejectReferralRequest {
@@ -427,11 +428,14 @@ export interface ForwardReferralRequest {
 }
 
 export interface SubmitReferralRequest {
-    status: 'PENDING'
+    status: 'PENDING_RECEIVING'
 }
 
 export interface RouteReferralRequest {
     receivingFacilityId: string
+    receivingDepartmentId?: string
+    waitingTime?: string
+    forwardingNote?: string
 }
 
 export interface AssignDepartmentRequest {
@@ -730,7 +734,7 @@ export const trmsApi = {
         })
     },
 
-    updateReferral(referralId: string, payload: AcceptReferralRequest | RejectReferralRequest | ForwardReferralRequest | SubmitReferralRequest) {
+    updateReferral(referralId: string, payload: AcceptReferralRequest | RejectReferralRequest | ForwardReferralRequest | SubmitReferralRequest | { status: string }) {
         return apiRequest<ApiReferral>(`/referrals/${referralId}`, {
             method: 'PATCH',
             headers: getAuthHeaders(),
@@ -746,12 +750,20 @@ export const trmsApi = {
         return this.updateReferral(referralId, { ...payload, status: 'REJECTED' })
     },
 
-    forwardReferral(referralId: string, payload: Omit<ForwardReferralRequest, 'status'>) {
+    async routeReferral(referralId: string, payload: RouteReferralRequest): Promise<ApiReferral> {
+        return apiRequest<ApiReferral>(`/referrals/${referralId}/route`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(payload),
+        })
+    },
+
+    async forwardReferral(referralId: string, payload: Omit<ForwardReferralRequest, 'status'>) {
         return this.updateReferral(referralId, { ...payload, status: 'FORWARDED' })
     },
 
     submitReferral(referralId: string) {
-        return this.updateReferral(referralId, { status: 'PENDING' })
+        return this.updateReferral(referralId, { status: 'PENDING_SENDING' })
     },
 
     cancelReferral(referralId: string) {
@@ -796,16 +808,16 @@ export const trmsApi = {
         }
     },
 
-    routeReferral(referralId: string, payload: RouteReferralRequest) {
-        return apiRequest<ApiReferral>(`/referrals/${referralId}/route`, {
-            method: 'POST',
+    assignReferralDepartment(referralId: string, payload: AssignDepartmentRequest) {
+        return apiRequest<ApiReferral>(`/referrals/${referralId}/assign`, {
+            method: 'PATCH',
             headers: getAuthHeaders(),
             body: JSON.stringify(payload),
         })
     },
 
-    assignReferralDepartment(referralId: string, payload: AssignDepartmentRequest) {
-        return apiRequest<ApiReferral>(`/referrals/${referralId}/assign`, {
+    internalForwardReferral(referralId: string, payload: { departmentId: string, reason: string }) {
+        return apiRequest<ApiReferral>(`/referrals/${referralId}/internal-forward`, {
             method: 'PATCH',
             headers: getAuthHeaders(),
             body: JSON.stringify(payload),

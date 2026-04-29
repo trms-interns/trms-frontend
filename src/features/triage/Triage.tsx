@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useLanguage } from '../../context/LanguageContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useAuth } from '../../context/AuthContext'
@@ -18,9 +18,12 @@ import {
     IconClipboardCheck,
     IconExternalLink,
     IconSearch,
+    IconArrowBackUp,
+    IconDownload,
+    IconUpload,
 } from '@tabler/icons-react'
 
-type ModalType = 'accept' | 'reject' | 'redirect' | 'report' | null
+type ModalType = 'accept' | 'reject' | 'redirect' | 'route' | null
 
 interface TriageActionRecord {
     id: string
@@ -75,10 +78,11 @@ function TriageModal({
 
 export default function Triage() {
     const navigate = useNavigate()
+    const [searchParams, setSearchParams] = useSearchParams()
     const { t } = useLanguage()
     const { isDark } = useTheme()
     const { user } = useAuth()
-    const { referrals, completeReferral, refreshReferrals } = useReferrals()
+    const { referrals, completeReferral, refreshReferrals, dischargeSummaries } = useReferrals()
 
     const [actions, setActions] = useState<TriageActionRecord[]>([])
     const [selectedRef, setSelectedRef] = useState<string | null>(null)
@@ -88,6 +92,7 @@ export default function Triage() {
     const [actionError, setActionError] = useState('')
     const [queueFilter, setQueueFilter] = useState<'all' | 'emergency' | 'urgent' | 'routine'>('all')
     const [queueSearch, setQueueSearch] = useState('')
+    const [activeTab, setActiveTab] = useState<'incoming' | 'outgoing'>('incoming')
 
     // Modal state
     const [modal, setModal] = useState<ModalType>(null)
@@ -101,13 +106,25 @@ export default function Triage() {
     const [selectedDepartmentId, setSelectedDepartmentId] = useState('')
     const [acceptWaitingTime, setAcceptWaitingTime] = useState('')
     const [acceptAppointmentDate, setAcceptAppointmentDate] = useState('')
+    const [acceptPriority, setAcceptPriority] = useState<'' | 'emergency' | 'urgent' | 'routine'>('')
     // Accept message (auto-filled, editable)
     const [acceptMsg, setAcceptMsg] = useState('')
-    // Report fields
-    const [diagnosis, setDiagnosis] = useState('')
-    const [treatment, setTreatment] = useState('')
-    const [followUp, setFollowUp] = useState('')
-    const [notes, setNotes] = useState('')
+    const [rejectReason, setRejectReason] = useState('')
+    const [rejectNote, setRejectNote] = useState('')
+    // Routing
+    const [routingFacilityId, setRoutingFacilityId] = useState('')
+    const [routingDepartmentId, setRoutingDepartmentId] = useState('')
+    const [routingWaitingTime, setRoutingWaitingTime] = useState('')
+    const [routingForwardingNote, setRoutingForwardingNote] = useState('')
+
+    const rejectionReasons = [
+        'Incomplete Clinical Information',
+        'Service Currently Unavailable',
+        'Department Overcapacity',
+        'Patient Not Eligible for Service',
+        'Incorrect Facility Selection',
+        'Other (Provide details below)'
+    ]
 
     useEffect(() => {
         const loadActionMeta = async () => {
@@ -127,8 +144,33 @@ export default function Triage() {
         void loadActionMeta()
     }, [user?.facilityId])
 
+    // Handle deep linking from notifications
+    useEffect(() => {
+        const urlRefId = searchParams.get('referralId')
+        if (urlRefId && referrals.length > 0) {
+            const found = referrals.find(r => r.id === urlRefId)
+            if (found) {
+                setSelectedRef(urlRefId)
+                // Determine which tab it belongs to
+                if (['pending_receiving', 'forwarded'].includes(found.status) && found.receivingFacilityId === user?.facilityId) {
+                    setActiveTab('incoming')
+                } else if (found.status === 'pending_sending' && found.referringFacilityId === user?.facilityId) {
+                    setActiveTab('outgoing')
+                }
+                // Clear the param so it doesn't keep switching back if user clicks away
+                setSearchParams({}, { replace: true })
+            }
+        }
+    }, [searchParams, referrals, user?.facilityId])
+
     const triageReferrals = referrals.filter(
-        r => ['pending', 'forwarded'].includes(r.status) && !resolvedReferrals[r.id]
+        r => {
+            if (activeTab === 'incoming') {
+                return ['pending_receiving', 'forwarded'].includes(r.status) && r.receivingFacilityId === user?.facilityId && !resolvedReferrals[r.id]
+            } else {
+                return r.status === 'pending_sending' && r.referringFacilityId === user?.facilityId && !resolvedReferrals[r.id]
+            }
+        }
     )
     const filteredQueueReferrals = triageReferrals.filter((referral) => {
         if (queueFilter !== 'all' && referral.priority !== queueFilter) return false
@@ -143,6 +185,7 @@ export default function Triage() {
     })
 
     const selected = filteredQueueReferrals.find(r => r.id === selectedRef) || null
+    const selectedDS = selected ? dischargeSummaries.find(ds => ds.referralId === selected.id) : null
 
     // Urgency groups
     const emergency = filteredQueueReferrals.filter(r => r.priority === 'emergency')
@@ -172,9 +215,9 @@ export default function Triage() {
     }
     const closeModal = () => {
         setModal(null)
-        setRejectMsg(''); setRedirectToFacilityId(''); setRedirectReason('')
-        setSelectedDepartmentId(''); setAcceptWaitingTime(''); setAcceptAppointmentDate('')
-        setDiagnosis(''); setTreatment(''); setFollowUp(''); setNotes('')
+        setRejectReason(''); setRejectNote(''); setRedirectToFacilityId(''); setRedirectReason('')
+        setSelectedDepartmentId(''); setAcceptAppointmentDate(''); setAcceptPriority('')
+        setRoutingFacilityId(''); setRoutingDepartmentId(''); setRoutingWaitingTime(''); setRoutingForwardingNote('')
     }
 
     const handleAccept = async () => {
@@ -188,6 +231,7 @@ export default function Triage() {
                 receivingDepartmentId: selectedDepartmentId,
                 waitingTime: acceptWaitingTime.trim() || undefined,
                 appointmentDate: acceptAppointmentDate || undefined,
+                priority: acceptPriority || undefined,
             })
             await refreshReferrals()
         } catch (error: any) {
@@ -214,12 +258,16 @@ export default function Triage() {
 
     const handleReject = async () => {
         const ref = referrals.find(r => r.id === actionRefId)
-        if (!ref || !rejectMsg) return
+        if (!ref || !rejectReason) return
+
+        const finalReason = rejectNote.trim() 
+            ? `${rejectReason}: ${rejectNote.trim()}`
+            : rejectReason
 
         try {
             setActionLoading(true)
             setActionError('')
-            await trmsApi.rejectReferral(actionRefId, { reason: rejectMsg.trim() })
+            await trmsApi.rejectReferral(actionRefId, { reason: finalReason })
             await refreshReferrals()
         } catch (error: any) {
             setActionError(error?.message || 'Failed to reject referral.')
@@ -279,26 +327,42 @@ export default function Triage() {
         setActionLoading(false)
     }
 
-    const handleReport = () => {
-        if (!selectedRef || !diagnosis.trim() || !treatment.trim() || !followUp.trim()) return
-        completeReferral({
-            referralId: selectedRef,
-            finalDiagnosis: diagnosis.trim(),
-            treatmentSummary: treatment.trim(),
-            medicationsPrescribed: notes.trim() || 'No medications documented.',
-            followUpInstructions: followUp.trim(),
-            dischargeDate: new Date().toISOString().slice(0, 10),
-            createdByUserId: user?.id || 'USR-UNKNOWN',
-            createdByName: user?.name || 'Assigned Clinician',
-        })
+    const handleRoute = async () => {
+        const ref = referrals.find(r => r.id === actionRefId)
+        if (!ref || !routingFacilityId) return
+
+        const targetFacility = facilities.find((f) => f.id === routingFacilityId)
+
+        try {
+            setActionLoading(true)
+            setActionError('')
+            await trmsApi.routeReferral(actionRefId, {
+                receivingFacilityId: routingFacilityId,
+                receivingDepartmentId: routingDepartmentId || undefined,
+                waitingTime: routingWaitingTime || undefined,
+                forwardingNote: routingForwardingNote || undefined,
+            })
+            await refreshReferrals()
+        } catch (error: any) {
+            setActionError(error?.message || 'Failed to route referral.')
+            setActionLoading(false)
+            return
+        }
+
+        setActions(prev => [
+            { id: `TA-${Date.now()}`, referralId: actionRefId, patientName: ref.patientName, action: 'redirected', by: 'Liaison', timestamp: new Date().toLocaleString(), note: `Routed to ${targetFacility?.name || 'facility'}` },
+            ...prev,
+        ])
+        setResolvedReferrals(prev => ({ ...prev, [actionRefId]: 'redirected' }))
         setFeedback({
-            type: 'accepted',
-            patientName: selected?.patientName || 'Patient',
-            referralId: selectedRef,
-            message: `Discharge summary submitted for ${selected?.patientName || 'the patient'}. Referral marked as completed.`,
+            type: 'redirected',
+            patientName: ref.patientName,
+            referralId: actionRefId,
+            message: `${ref.patientName} has been routed to ${targetFacility?.name || 'the facility'} and is now in their incoming queue.`,
         })
         setSelectedRef(null)
         closeModal()
+        setActionLoading(false)
     }
 
     const cardBase = `rounded-2xl border p-5 shadow-sm ${isDark ? 'bg-surface-900 border-surface-800' : 'bg-white border-surface-200'}`
@@ -428,7 +492,7 @@ export default function Triage() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full lg:w-auto">
                     <div className={`rounded-xl border px-3 py-2 ${isDark ? 'bg-surface-950 border-surface-800' : 'bg-surface-50 border-surface-200'}`}>
-                        <p className={`text-[10px] uppercase font-semibold ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>Incoming</p>
+                        <p className={`text-[10px] uppercase font-semibold ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>{activeTab === 'incoming' ? 'Incoming' : 'Outgoing'}</p>
                         <p className="text-lg font-bold">{triageReferrals.length}</p>
                     </div>
                     <div className={`rounded-xl border px-3 py-2 ${isDark ? 'border-red-900/60 bg-red-950/40' : 'border-red-200 bg-red-50'}`}>
@@ -446,6 +510,35 @@ export default function Triage() {
                 </div>
             </div>
 
+            <div className={`p-1.5 flex gap-1 rounded-xl w-full sm:w-auto ${isDark ? 'bg-surface-900 border border-surface-800' : 'bg-surface-100 border border-surface-200'}`}>
+                <button
+                    onClick={() => { setActiveTab('incoming'); setSelectedRef(null); }}
+                    className={`flex-1 sm:flex-none px-6 py-2.5 text-sm font-bold rounded-lg transition-all ${
+                        activeTab === 'incoming' 
+                        ? 'bg-primary-600 text-white shadow-sm' 
+                        : isDark ? 'text-surface-400 hover:text-surface-200 hover:bg-surface-800' : 'text-surface-600 hover:text-surface-800 hover:bg-surface-200/50'
+                    }`}
+                >
+                    <div className="flex items-center justify-center gap-2">
+                        <IconDownload size={16} />
+                        {t('tri.incoming')}
+                    </div>
+                </button>
+                <button
+                    onClick={() => { setActiveTab('outgoing'); setSelectedRef(null); }}
+                    className={`flex-1 sm:flex-none px-6 py-2.5 text-sm font-bold rounded-lg transition-all ${
+                        activeTab === 'outgoing' 
+                        ? 'bg-primary-600 text-white shadow-sm' 
+                        : isDark ? 'text-surface-400 hover:text-surface-200 hover:bg-surface-800' : 'text-surface-600 hover:text-surface-800 hover:bg-surface-200/50'
+                    }`}
+                >
+                    <div className="flex items-center justify-center gap-2">
+                        <IconUpload size={16} />
+                        {t('tri.outgoing')}
+                    </div>
+                </button>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
                 {/* ── Queue — urgency sections ────────────────────────── */}
                 <div className="lg:col-span-2 space-y-5">
@@ -455,7 +548,7 @@ export default function Triage() {
                                 <IconAlertTriangle size={14} />
                             </div>
                             <div>
-                                <span className="text-sm font-semibold">{t('tri.incoming')} ({filteredQueueReferrals.length})</span>
+                                <span className="text-sm font-semibold">{activeTab === 'incoming' ? t('tri.incoming') : t('tri.outgoing')} ({filteredQueueReferrals.length})</span>
                                 <p className={`text-[11px] ${isDark ? 'text-surface-500' : 'text-surface-500'}`}>Sorted by clinical urgency</p>
                             </div>
                         </div>
@@ -512,31 +605,44 @@ export default function Triage() {
                     {selected ? (
                         <>
                             <div className={`sticky top-4 z-20 rounded-xl border p-3 backdrop-blur ${isDark ? 'border-surface-700 bg-surface-900/90' : 'border-surface-200 bg-white/95'}`}>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                    <button
-                                        onClick={() => openModal('accept', selected.id)}
-                                        className="flex items-center justify-center gap-2 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition-all"
-                                    >
-                                        <IconCircleCheck size={14} /> {t('tri.accept')}
-                                    </button>
-                                    <button
-                                        onClick={() => openModal('reject', selected.id)}
-                                        className="flex items-center justify-center gap-2 py-2 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 transition-all"
-                                    >
-                                        <IconCircleX size={14} /> {t('tri.reject')}
-                                    </button>
-                                    <button
-                                        onClick={() => openModal('redirect', selected.id)}
-                                        className={`flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold border transition-all ${isDark ? 'border-surface-700 text-surface-300 hover:bg-surface-800' : 'border-surface-300 text-surface-700 hover:bg-surface-100'}`}
-                                    >
-                                        <IconArrowsLeftRight size={14} /> {t('tri.redirect')}
-                                    </button>
-                                    <button
-                                        onClick={() => openModal('report', selected.id)}
-                                        className={`flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold border transition-all ${isDark ? 'border-primary-500/40 text-primary-300 hover:bg-primary-500/10' : 'border-primary-300 text-primary-700 hover:bg-primary-50'}`}
-                                    >
-                                        <IconFileText size={14} /> {t('tri.writeReport')}
-                                    </button>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {activeTab === 'incoming' ? (
+                                        <>
+                                            <button
+                                                onClick={() => openModal('accept', selected.id)}
+                                                className="flex items-center justify-center gap-2 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition-all"
+                                            >
+                                                <IconCircleCheck size={14} /> Assign to Department
+                                            </button>
+                                            <button
+                                                onClick={() => openModal('reject', selected.id)}
+                                                className="flex items-center justify-center gap-2 py-2 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 transition-all"
+                                            >
+                                                <IconCircleX size={14} /> {t('tri.reject')}
+                                            </button>
+                                            <button
+                                                onClick={() => openModal('redirect', selected.id)}
+                                                className={`flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold border transition-all col-span-2 ${isDark ? 'border-surface-700 text-surface-300 hover:bg-surface-800' : 'border-surface-300 text-surface-700 hover:bg-surface-100'}`}
+                                            >
+                                                <IconArrowsLeftRight size={14} /> Forward
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <div className="grid grid-cols-2 gap-2 w-full">
+                                            <button
+                                                onClick={() => openModal('route', selected.id)}
+                                                className="flex items-center justify-center gap-2 py-2 bg-primary-600 text-white rounded-lg text-xs font-semibold hover:bg-primary-700 transition-all"
+                                            >
+                                                <IconSend size={14} /> {t('tri.routeReferral')}
+                                            </button>
+                                            <button
+                                                onClick={() => openModal('reject', selected.id)}
+                                                className="flex items-center justify-center gap-2 py-2 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 transition-all"
+                                            >
+                                                <IconArrowBackUp size={14} /> Send Back to Doctor
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                             <div className={cardBase}>
@@ -569,6 +675,32 @@ export default function Triage() {
                                     {selected.hasImage && (
                                         <div className={`p-3 rounded-lg text-[11px] ${isDark ? 'bg-surface-950 text-surface-400' : 'bg-surface-50 text-surface-500'}`}>
                                             📎 1 image attachment
+                                        </div>
+                                    )}
+                                    {selectedDS && (
+                                        <div className={`mt-4 p-4 rounded-xl border-2 animate-fade-in ${isDark ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-emerald-50 border-emerald-200'}`}>
+                                            <p className="text-[10px] font-bold text-emerald-600 uppercase mb-2">Outcome Summary</p>
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between items-start gap-4">
+                                                    <div>
+                                                        <p className="text-[10px] text-surface-500 uppercase font-bold">Final Diagnosis</p>
+                                                        <p className="text-sm font-bold text-emerald-500">{selectedDS.finalDiagnosis}</p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-[10px] text-surface-500 uppercase font-bold">Closed On</p>
+                                                        <p className="text-xs font-semibold">{new Date(selectedDS.dischargeDate).toLocaleDateString()}</p>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] text-surface-500 uppercase font-bold">Note</p>
+                                                    <p className="text-sm leading-relaxed italic">"{selectedDS.treatmentSummary}"</p>
+                                                </div>
+                                                {selectedDS.followUpInstructions && (
+                                                    <div className={`p-2.5 rounded-lg text-xs ${isDark ? 'bg-surface-950/50 text-surface-400 border border-surface-800' : 'bg-white/50 text-surface-600 border border-surface-200'}`}>
+                                                        <span className="font-bold">Instructions:</span> {selectedDS.followUpInstructions}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -608,7 +740,7 @@ export default function Triage() {
             {/* ── ACCEPT MODAL ─────────────────────────────────────────────── */}
             {modal === 'accept' && (
                 <TriageModal
-                    title={t('tri.acceptMsg')}
+                    title="Assign to Department"
                     icon={<div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-emerald-500/20' : 'bg-emerald-100'}`}><IconCircleCheck size={14} className={`${isDark ? 'text-emerald-300' : 'text-emerald-600'}`} /></div>}
                     onClose={closeModal}
                     isDark={isDark}
@@ -617,8 +749,8 @@ export default function Triage() {
                         The following acceptance notification will be sent to the referring facility.
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                        <div>
-                            <label className="text-xs font-semibold text-surface-400 mb-1 block">Receiving Department</label>
+                        <div className="md:col-span-2">
+                            <label className="text-xs font-semibold text-surface-400 mb-1 block uppercase tracking-wide">Receiving Department <span className="text-red-500">*</span></label>
                             <select
                                 className={inputCls}
                                 value={selectedDepartmentId}
@@ -631,16 +763,29 @@ export default function Triage() {
                             </select>
                         </div>
                         <div>
-                            <label className="text-xs font-semibold text-surface-400 mb-1 block">Estimated Waiting Time</label>
+                            <label className="text-xs font-semibold text-surface-400 mb-1 block uppercase tracking-wide">Update Priority (Optional)</label>
+                            <select
+                                className={inputCls}
+                                value={acceptPriority}
+                                onChange={e => setAcceptPriority(e.target.value as any)}
+                            >
+                                <option value="">Keep current priority</option>
+                                <option value="emergency">Emergency</option>
+                                <option value="urgent">Urgent</option>
+                                <option value="routine">Routine</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-xs font-semibold text-surface-400 mb-1 block uppercase tracking-wide">Est. Waiting Time</label>
                             <input
                                 className={inputCls}
-                                placeholder="e.g. 30 minutes"
+                                placeholder="e.g. 30 minutes, 2 hours..."
                                 value={acceptWaitingTime}
                                 onChange={(e) => setAcceptWaitingTime(e.target.value)}
                             />
                         </div>
-                        <div>
-                            <label className="text-xs font-semibold text-surface-400 mb-1 block">Appointment Date (optional)</label>
+                        <div className="md:col-span-2">
+                            <label className="text-xs font-semibold text-surface-400 mb-1 block uppercase tracking-wide">Appointment Date (Optional)</label>
                             <input
                                 type="date"
                                 className={inputCls}
@@ -656,8 +801,8 @@ export default function Triage() {
                         onChange={e => setAcceptMsg(e.target.value)}
                     />
                     <div className="flex gap-3 mt-4">
-                        <button onClick={handleAccept} disabled={actionLoading || !selectedDepartmentId} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-60">
-                            <IconSend size={14} /> IconSend & Confirm Acceptance
+                        <button onClick={handleAccept} disabled={actionLoading || !selectedDepartmentId} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-emerald-700 transition-colors">
+                            <IconCircleCheck size={14} /> Assign & Notify
                         </button>
                         <button onClick={closeModal} className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}>{t('common.cancel')}</button>
                     </div>
@@ -673,21 +818,45 @@ export default function Triage() {
                     isDark={isDark}
                 >
                     <p className={`text-xs mb-3 ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>
-                        Edit the message below and send it to the referring facility.
+                        Select a reason and provide additional details for the referring facility.
                     </p>
-                    <label className="text-xs font-semibold text-surface-400 mb-1.5 block uppercase tracking-wide">
-                        Rejection Message
-                    </label>
-                    <textarea
-                        className={textareaCls}
-                        rows={5}
-                        autoFocus
-                        value={rejectMsg}
-                        onChange={e => setRejectMsg(e.target.value)}
-                    />
+                    
+                    <div className="space-y-3">
+                        <div>
+                            <label className="text-xs font-semibold text-surface-400 mb-1 block uppercase tracking-wide">
+                                Reason for Rejection
+                            </label>
+                            <select
+                                className={inputCls}
+                                value={rejectReason}
+                                onChange={e => setRejectReason(e.target.value)}
+                            >
+                                <option value="">Select a reason</option>
+                                {rejectionReasons.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="text-xs font-semibold text-surface-400 mb-1 block uppercase tracking-wide">
+                                Additional Notes
+                            </label>
+                            <textarea
+                                className={textareaCls}
+                                rows={4}
+                                placeholder="Details regarding the rejection..."
+                                value={rejectNote}
+                                onChange={e => setRejectNote(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
                     <div className="flex gap-3 mt-4">
-                        <button onClick={handleReject} disabled={actionLoading || !rejectMsg.trim()} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-red-700 transition-colors">
-                            <IconSend size={14} /> IconSend Rejection
+                        <button 
+                            onClick={handleReject} 
+                            disabled={actionLoading || !rejectReason} 
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-red-700 transition-colors"
+                        >
+                            <IconSend size={14} /> Send Rejection
                         </button>
                         <button onClick={closeModal} className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}>{t('common.cancel')}</button>
                     </div>
@@ -697,7 +866,7 @@ export default function Triage() {
             {/* ── REDIRECT MODAL ───────────────────────────────────────────── */}
             {modal === 'redirect' && (
                 <TriageModal
-                    title={t('tri.redirectMsg')}
+                    title="Forward Referral"
                     icon={<div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-[#2b4968]/20' : 'bg-[#2b4968]/10'}`}><IconArrowsLeftRight size={14} className={`${isDark ? 'text-[#2b4968]' : 'text-[#2b4968]'}`} /></div>}
                     onClose={closeModal}
                     isDark={isDark}
@@ -734,51 +903,78 @@ export default function Triage() {
                     </div>
                     <div className="flex gap-3 mt-4">
                         <button onClick={handleRedirect} disabled={actionLoading || !redirectToFacilityId || !redirectReason.trim()} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-[#2b4968] text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-[#2b4968]/90 transition-colors">
-                            <IconSend size={14} /> IconSend Redirect Notice
+                            <IconSend size={14} /> Forward Referral
                         </button>
                         <button onClick={closeModal} className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}>{t('common.cancel')}</button>
                     </div>
                 </TriageModal>
             )}
 
-            {/* ── TREATMENT REPORT MODAL ───────────────────────────────────── */}
-            {modal === 'report' && selected && (
+            {/* ── ROUTE MODAL ─────────────────────────────────────────────── */}
+            {modal === 'route' && selected && (
                 <TriageModal
-                    title={t('tri.reportTitle')}
-                    icon={<div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-primary-500/20' : 'bg-primary-100'}`}><IconClipboardCheck size={14} className={`${isDark ? 'text-primary-300' : 'text-primary-600'}`} /></div>}
+                    title={t('tri.routeReferral')}
+                    icon={<div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-primary-500/20' : 'bg-primary-100'}`}><IconSend size={14} className={`${isDark ? 'text-primary-300' : 'text-primary-600'}`} /></div>}
                     onClose={closeModal}
                     isDark={isDark}
                 >
                     <p className={`text-xs mb-4 ${isDark ? 'text-surface-400' : 'text-surface-500'}`}>
-                        This report will be sent to <strong className={isDark ? 'text-surface-300' : 'text-surface-700'}>{selected.referringFacility}</strong> and added to the patient record for {selected.patientName}.
+                        Route this referral to a receiving facility. The receiving facility's liaison will assign the appropriate department upon acceptance.
                     </p>
-                    <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1">
-                        <div>
-                            <label className="text-xs font-semibold text-surface-400 mb-1.5 block uppercase tracking-wide">{t('tri.diagnosis')}</label>
-                            <textarea className={textareaCls} rows={2} placeholder="Final confirmed diagnosis..." value={diagnosis} onChange={e => setDiagnosis(e.target.value)} />
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-1 gap-3">
+                            <div>
+                                <label className="text-xs font-semibold text-surface-400 mb-1 block">Receiving Facility</label>
+                                <select
+                                    className={inputCls}
+                                    value={routingFacilityId}
+                                    onChange={e => setRoutingFacilityId(e.target.value)}
+                                >
+                                    <option value="">Select facility</option>
+                                    {facilities
+                                        .filter(f => f.id !== user?.facilityId)
+                                        .map((f) => (
+                                            <option key={f.id} value={f.id}>{f.name} ({f.location || 'Unknown'})</option>
+                                        ))}
+                                </select>
+                            </div>
                         </div>
-                        <div>
-                            <label className="text-xs font-semibold text-surface-400 mb-1.5 block uppercase tracking-wide">{t('tri.treatment')}</label>
-                            <textarea className={textareaCls} rows={3} placeholder="Procedures performed, medications administered, interventions..." value={treatment} onChange={e => setTreatment(e.target.value)} />
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-xs font-semibold text-surface-400 mb-1 block">Est. Waiting Time (optional)</label>
+                                <input
+                                    className={inputCls}
+                                    placeholder="e.g. 2 days"
+                                    value={routingWaitingTime}
+                                    onChange={e => setRoutingWaitingTime(e.target.value)}
+                                />
+                            </div>
                         </div>
+
                         <div>
-                            <label className="text-xs font-semibold text-surface-400 mb-1.5 block uppercase tracking-wide">{t('tri.followUp')}</label>
-                            <textarea className={textareaCls} rows={3} placeholder="Follow-up appointments, medications to continue, warning signs to watch..." value={followUp} onChange={e => setFollowUp(e.target.value)} />
-                        </div>
-                        <div>
-                            <label className="text-xs font-semibold text-surface-400 mb-1.5 block uppercase tracking-wide">{t('tri.additionalNotes')}</label>
-                            <textarea className={textareaCls} rows={2} placeholder="Any additional notes for the referring team..." value={notes} onChange={e => setNotes(e.target.value)} />
+                            <label className="text-xs font-semibold text-surface-400 mb-1 block">Forwarding Note (optional)</label>
+                            <textarea
+                                className={textareaCls}
+                                rows={3}
+                                placeholder="Internal note for the receiving liaison..."
+                                value={routingForwardingNote}
+                                onChange={e => setRoutingForwardingNote(e.target.value)}
+                            />
                         </div>
                     </div>
-                    <div className="flex gap-3 mt-4">
-                        <button
-                            onClick={handleReport}
-                            disabled={!diagnosis.trim() || !treatment.trim()}
-                            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-primary-800 transition-colors"
+
+                    <div className="flex gap-3 mt-6">
+                        <button 
+                            onClick={handleRoute} 
+                            disabled={actionLoading || !routingFacilityId} 
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-primary-700 transition-colors"
                         >
-                            <IconSend size={14} /> {t('tri.submitReport')}
+                            <IconSend size={14} /> Confirm Routing
                         </button>
-                        <button onClick={closeModal} className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}>{t('common.cancel')}</button>
+                        <button onClick={closeModal} className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${isDark ? 'border-surface-600 text-surface-300' : 'border-surface-300'}`}>
+                            {t('common.cancel')}
+                        </button>
                     </div>
                 </TriageModal>
             )}

@@ -28,9 +28,9 @@ export default function Dashboard() {
   // Calculate stats from real referral data
   const totalReferrals = referrals.length;
   const pendingSync = referrals.filter((r) =>
-    ["draft", "pending", "pending_routing"].includes(r.status),
+    ["draft", "pending_sending"].includes(r.status),
   ).length;
-  const activeTriage = referrals.filter(r => r.status === 'pending').length;
+  const activeTriage = referrals.filter(r => r.status === 'pending_receiving').length;
   const completedToday = referrals.filter(r => r.status === 'completed').length;
 
   const quickActions = [
@@ -55,7 +55,7 @@ export default function Dashboard() {
   ];
 
   const statusChartData = [
-    { label: "Pending", value: referrals.filter((r) => r.status === "pending").length, colorClass: "bg-amber-500" },
+    { label: "Pending", value: referrals.filter((r) => r.status === "pending_receiving").length, colorClass: "bg-amber-500" },
     { label: "Accepted", value: referrals.filter((r) => r.status === "accepted").length, colorClass: "bg-emerald-500" },
     { label: "Rejected", value: referrals.filter((r) => r.status === "rejected").length, colorClass: "bg-red-500" },
     { label: "Completed", value: referrals.filter((r) => r.status === "completed").length, colorClass: "bg-primary-600" },

@@ -62,6 +62,7 @@ export default function DeptHeadDashboard() {
         phone: '',
         birthDate: '',
     })
+    const [deptType, setDeptType] = useState<'clinical' | 'liaison' | null>(null)
     const [editUserForm, setEditUserForm] = useState({
         fullName: '',
         role: 'doctor' as 'doctor' | 'liaison_officer' | 'hew',
@@ -85,13 +86,18 @@ export default function DeptHeadDashboard() {
 
     useEffect(() => {
         void loadUsers()
-    }, [user?.facilityId])
+        if (user?.departmentId) {
+            void trmsApi.getDepartment(user.departmentId).then(dept => {
+                setDeptType(dept.type || 'clinical')
+            })
+        }
+    }, [user?.facilityId, user?.departmentId])
 
     const resetAddUserForm = () => {
         setNewUser({
             fullName: '',
             username: '',
-            role: 'doctor',
+            role: deptType === 'liaison' ? 'liaison_officer' : 'doctor',
             initialPassword: '',
             email: '',
             phone: '',
@@ -355,7 +361,7 @@ export default function DeptHeadDashboard() {
     }`
     const deptChartData = [
         { label: 'Users', value: deptUsers.length, colorClass: 'bg-primary-600' },
-        { label: 'Pending', value: deptReferrals.filter((r) => r.status === 'pending').length, colorClass: 'bg-amber-500' },
+        { label: 'Pending', value: deptReferrals.filter((r) => r.status === 'pending_receiving').length, colorClass: 'bg-amber-500' },
         { label: 'Accepted', value: deptReferrals.filter((r) => r.status === 'accepted').length, colorClass: 'bg-emerald-500' },
         { label: 'Rejected', value: deptReferrals.filter((r) => r.status === 'rejected').length, colorClass: 'bg-red-500' },
     ]
@@ -614,16 +620,20 @@ export default function DeptHeadDashboard() {
                             label="Role"
                             as="select"
                             required
+                            disabled={deptType === 'liaison'}
                             value={newUser.role}
                             onChange={(e) => {
                                 setNewUser((current) => ({ ...current, role: e.target.value as typeof current.role }))
                                 setAddUserError('')
                             }}
-                            options={[
-                                { value: 'doctor', label: 'Doctor' },
-                                { value: 'liaison_officer', label: 'Liaison Officer' },
-                                { value: 'hew', label: 'Health Extension Worker' },
-                            ]}
+                            options={
+                                deptType === 'liaison'
+                                    ? [{ value: 'liaison_officer', label: 'Liaison Officer' }]
+                                    : [
+                                        { value: 'doctor', label: 'Doctor' },
+                                        { value: 'hew', label: 'Health Extension Worker' },
+                                    ]
+                            }
                         />
                         <FormField
                             label="Username"
@@ -725,6 +735,7 @@ export default function DeptHeadDashboard() {
                             label="Role"
                             as="select"
                             required
+                            disabled={deptType === 'liaison'}
                             value={editUserForm.role}
                             onChange={(e) => {
                                 setEditUserForm((current) => ({
@@ -733,11 +744,14 @@ export default function DeptHeadDashboard() {
                                 }))
                                 setEditingError('')
                             }}
-                            options={[
-                                { value: 'doctor', label: 'Doctor' },
-                                { value: 'liaison_officer', label: 'Liaison Officer' },
-                                { value: 'hew', label: 'Health Extension Worker' },
-                            ]}
+                            options={
+                                deptType === 'liaison'
+                                    ? [{ value: 'liaison_officer', label: 'Liaison Officer' }]
+                                    : [
+                                        { value: 'doctor', label: 'Doctor' },
+                                        { value: 'hew', label: 'Health Extension Worker' },
+                                    ]
+                            }
                         />
                         {editingError && <p className="text-xs text-red-500 font-medium">{editingError}</p>}
                         <div className="flex gap-3 mt-4">

@@ -19,7 +19,7 @@ export interface Referral {
     receivingFacility: string
     receivingDepartmentId?: string
     priority: 'emergency' | 'urgent' | 'routine'
-    status: 'draft' | 'pending' | 'synced' | 'failed' | 'accepted' | 'rejected' | 'forwarded' | 'completed' | 'pending_routing'
+    status: 'draft' | 'pending_sending' | 'pending_receiving' | 'accepted' | 'rejected' | 'forwarded' | 'completed' | 'synced' | 'failed'
     chiefComplaint: string
     clinicalSummary: string
     primaryDiagnosis?: string
@@ -39,13 +39,18 @@ export interface Referral {
     acceptedByUserDepartment?: string
     acceptedByUserPhone?: string
     acceptedByUserEmail?: string
-    rejectedByUserId?: string
+    rejectedByUserId?: string | null
     rejectedByUserName?: string
     rejectedByUserDepartment?: string
     rejectedByUserPhone?: string
     rejectedByUserEmail?: string
+    clinicianAcceptedByUserId?: string | null
+    clinicianAcceptedByUserName?: string
+    clinicianAcceptedByUserDepartment?: string
+    clinicianAcceptedByUserPhone?: string
+    clinicianAcceptedByUserEmail?: string
     estimatedWaitingTime?: string
-    rejectionReason?: string
+    rejectionReason?: string | null
     date: string
     hasImage: boolean
     department?: string
