@@ -50,7 +50,7 @@ export default function DoctorDashboard() {
         const inMyDept = user?.departmentId
             ? r.receivingDepartmentId === user.departmentId
             : true
-        return inMyDept && ['accepted', 'pending', 'forwarded'].includes(r.status)
+        return inMyDept && ['accepted', 'pending_receiving', 'forwarded'].includes(r.status)
     })
     const completedReferrals = referrals.filter(
         r => (user?.departmentId ? r.receivingDepartmentId === user.departmentId : true) && r.status === 'completed'
@@ -61,7 +61,7 @@ export default function DoctorDashboard() {
     const textareaCls = `${inputCls} resize-none leading-relaxed`
     const activeReferral = deptReferrals.find(ref => ref.id === activeReferralId) || null
     const doctorChartData = [
-        { label: 'Pending', value: deptReferrals.filter((r) => r.status === 'pending').length, colorClass: 'bg-amber-500' },
+        { label: 'Pending', value: deptReferrals.filter((r) => r.status === 'pending_receiving').length, colorClass: 'bg-amber-500' },
         { label: 'Accepted', value: deptReferrals.filter((r) => r.status === 'accepted').length, colorClass: 'bg-emerald-500' },
         { label: 'Forwarded', value: deptReferrals.filter((r) => r.status === 'forwarded').length, colorClass: 'bg-purple-500' },
         { label: 'Completed', value: completedReferrals.length, colorClass: 'bg-primary-600' },

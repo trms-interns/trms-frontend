@@ -132,19 +132,19 @@ export default function MyReferrals() {
     }, [canReviewAnyFacility, selectedRef, user])
     const canTakeLifecycleAction = Boolean(
         selectedRef &&
-        ['pending', 'forwarded'].includes(selectedRef.status) &&
+        ['pending_receiving', 'forwarded'].includes(selectedRef.status) &&
         isReceivingFacilityReferral &&
         ['Liaison Officer', 'Doctor', 'System Administrator'].includes(user?.role || ''),
     )
     const canForwardReferral = Boolean(
         selectedRef &&
-        ['pending', 'forwarded'].includes(selectedRef.status) &&
+        ['pending_receiving', 'forwarded'].includes(selectedRef.status) &&
         isReceivingFacilityReferral &&
         ['Liaison Officer', 'System Administrator'].includes(user?.role || ''),
     )
     const canCancelSentReferral = Boolean(
         selectedRef &&
-        ['draft', 'pending', 'pending_sending'].includes(selectedRef.status) &&
+        ['draft', 'pending_receiving', 'pending_sending'].includes(selectedRef.status) &&
         selectedRef.referringUserId === user?.id,
     )
     const canEditSentReferral = Boolean(

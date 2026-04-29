@@ -366,9 +366,6 @@ export interface ApiReferral {
     receivingFacility?: { id: string; name?: string }
     receivingDepartment?: { id: string; name?: string }
     referringUser?: ApiReferralUserSummary
-    acceptedByUser?: ApiReferralUserSummary
-    rejectedByUser?: ApiReferralUserSummary
-    clinicianAcceptedByUser?: ApiReferralUserSummary
     priority: ApiReferralPriority
     clinicalSummary: string
     primaryDiagnosis: string
@@ -383,32 +380,14 @@ export interface ApiReferral {
     waitingTime?: string
     acceptedAt?: string | null
     acceptedByUserId?: string | null
-    acceptedByUser?: {
-        id: string
-        fullName: string
-        email?: string
-        phone?: string
-        departmentName?: string
-    }
+    acceptedByUser?: ApiReferralUserSummary
     rejectedByUserId?: string | null
-    rejectedByUser?: {
-        id: string
-        fullName: string
-        email?: string
-        phone?: string
-        departmentName?: string
-    }
+    rejectedByUser?: ApiReferralUserSummary
     rejectionReason?: string | null
     clinicianAcceptedAt?: string | null
     clinicianAcceptedByUserId?: string | null
-    clinicianAcceptedByUser?: {
-        id: string
-        fullName: string
-        email?: string
-        phone?: string
-        departmentName?: string
-    }
-    dischargeSummary?: ApiDischargeSummary | null
+    clinicianAcceptedByUser?: ApiReferralUserSummary
+    dischargeSummary?: DischargeSummary | null
     forwardingNote?: string | null
     forwardedFromReferralId?: string | null
 }

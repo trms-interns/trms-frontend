@@ -16,8 +16,8 @@ const config: Record<string, { bg: string; text: string; label: string }> = {
     // Status
     draft: { bg: 'bg-surface-500/15', text: 'text-surface-400', label: 'Draft' },
     synced: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', label: '✓ Synced' },
-    pending_sending: { bg: 'bg-amber-500/15', text: 'text-amber-400', label: '⏳ Awaiting Routing' },
-    pending_receiving: { bg: 'bg-sky-500/15', text: 'text-sky-400', label: 'Incoming' },
+    pending_sending: { bg: 'bg-amber-500/15', text: 'text-amber-400', label: 'Pending Routing' },
+    pending_receiving: { bg: 'bg-sky-500/15', text: 'text-sky-400', label: 'Pending Acceptance' },
     failed: { bg: 'bg-red-500/15', text: 'text-red-400', label: '✗ Failed' },
     accepted: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', label: 'Accepted' },
     rejected: { bg: 'bg-red-500/15', text: 'text-red-400', label: 'Rejected' },

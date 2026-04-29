@@ -113,6 +113,7 @@ export default function Triage() {
     const [rejectNote, setRejectNote] = useState('')
     // Routing
     const [routingFacilityId, setRoutingFacilityId] = useState('')
+    const [routingDepartmentId, setRoutingDepartmentId] = useState('')
     const [routingWaitingTime, setRoutingWaitingTime] = useState('')
     const [routingForwardingNote, setRoutingForwardingNote] = useState('')
 
@@ -151,7 +152,7 @@ export default function Triage() {
             if (found) {
                 setSelectedRef(urlRefId)
                 // Determine which tab it belongs to
-                if (['pending', 'pending_receiving', 'forwarded'].includes(found.status) && found.receivingFacilityId === user?.facilityId) {
+                if (['pending_receiving', 'forwarded'].includes(found.status) && found.receivingFacilityId === user?.facilityId) {
                     setActiveTab('incoming')
                 } else if (found.status === 'pending_sending' && found.referringFacilityId === user?.facilityId) {
                     setActiveTab('outgoing')
@@ -165,7 +166,7 @@ export default function Triage() {
     const triageReferrals = referrals.filter(
         r => {
             if (activeTab === 'incoming') {
-                return ['pending', 'pending_receiving', 'forwarded'].includes(r.status) && r.receivingFacilityId === user?.facilityId && !resolvedReferrals[r.id]
+                return ['pending_receiving', 'forwarded'].includes(r.status) && r.receivingFacilityId === user?.facilityId && !resolvedReferrals[r.id]
             } else {
                 return r.status === 'pending_sending' && r.referringFacilityId === user?.facilityId && !resolvedReferrals[r.id]
             }
@@ -215,7 +216,7 @@ export default function Triage() {
         setModal(null)
         setRejectReason(''); setRejectNote(''); setRedirectToFacilityId(''); setRedirectReason('')
         setSelectedDepartmentId(''); setAcceptAppointmentDate(''); setAcceptPriority('')
-        setRoutingFacilityId(''); setRoutingWaitingTime(''); setRoutingForwardingNote('')
+        setRoutingFacilityId(''); setRoutingDepartmentId(''); setRoutingWaitingTime(''); setRoutingForwardingNote('')
     }
 
     const handleAccept = async () => {
@@ -336,6 +337,7 @@ export default function Triage() {
             setActionError('')
             await trmsApi.routeReferral(actionRefId, {
                 receivingFacilityId: routingFacilityId,
+                receivingDepartmentId: routingDepartmentId || undefined,
                 waitingTime: routingWaitingTime || undefined,
                 forwardingNote: routingForwardingNote || undefined,
             })
