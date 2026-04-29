@@ -383,6 +383,7 @@ export interface ApiReferral {
     acceptedAt?: string | null
     acceptedByUserId?: string | null
     acceptedByUser?: ApiReferralUserSummary
+    appointmentDate?: string | null
     rejectedByUserId?: string | null
     rejectedByUser?: ApiReferralUserSummary
     rejectionReason?: string | null
