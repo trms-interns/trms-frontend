@@ -537,7 +537,7 @@ export default function App() {
       <main className="flex-1 min-h-screen flex flex-col">
         {/* Top bar */}
         <header
-          className={`sticky top-0 z-30 flex items-center gap-4 px-4 lg:px-6 h-14 border-b backdrop-blur-md ${isDark ? "bg-surface-950/80 border-surface-800" : "bg-white/80 border-surface-200"}`}
+          className={`sticky top-0 z-30 flex items-center gap-4 px-4 lg:px-6 h-14 border-b ${isDark ? "bg-surface-950 border-surface-800" : "bg-white border-surface-200"}`}
         >
           <button
             className="lg:hidden p-2 rounded-lg hover:bg-surface-800/50"

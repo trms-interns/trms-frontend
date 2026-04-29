@@ -1,7 +1,7 @@
 import React from 'react'
 
 type Priority = 'emergency' | 'urgent' | 'routine'
-type Status = 'draft' | 'synced' | 'pending' | 'pending_routing' | 'pending_sending' | 'pending_receiving' | 'failed' | 'accepted' | 'rejected' | 'redirected' | 'forwarded' | 'completed' | 'available' | 'limited' | 'unavailable' | 'sent'
+type Status = 'draft' | 'synced' | 'pending_sending' | 'pending_receiving' | 'failed' | 'accepted' | 'rejected' | 'redirected' | 'forwarded' | 'completed' | 'available' | 'limited' | 'unavailable' | 'sent'
 
 interface Props {
     type: 'priority' | 'status' | 'sync' | 'department'

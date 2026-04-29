@@ -149,7 +149,7 @@ export default function MyReferrals() {
     )
     const canEditSentReferral = Boolean(
         selectedRef &&
-        ['draft', 'pending', 'pending_sending'].includes(selectedRef.status) &&
+        ['draft', 'pending_receiving', 'pending_sending'].includes(selectedRef.status) &&
         selectedRef.referringUserId === user?.id,
     )
 
@@ -450,6 +450,7 @@ export default function MyReferrals() {
                                         Receiving Department: <strong className={isDark ? 'text-surface-300' : 'text-surface-700'}>{selectedRef.department}</strong>
                                     </div>
                                 )}
+
 
                                 <div className={`rounded-xl border p-3 text-xs space-y-1.5 ${isDark ? 'border-surface-700 bg-surface-950' : 'border-surface-200 bg-surface-50'}`}>
                                     <p className="font-semibold uppercase tracking-wide text-surface-500">Referring User</p>

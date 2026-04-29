@@ -361,7 +361,7 @@ export default function DeptHeadDashboard() {
     }`
     const deptChartData = [
         { label: 'Users', value: deptUsers.length, colorClass: 'bg-primary-600' },
-        { label: 'Pending', value: deptReferrals.filter((r) => r.status === 'pending').length, colorClass: 'bg-amber-500' },
+        { label: 'Pending', value: deptReferrals.filter((r) => r.status === 'pending_receiving').length, colorClass: 'bg-amber-500' },
         { label: 'Accepted', value: deptReferrals.filter((r) => r.status === 'accepted').length, colorClass: 'bg-emerald-500' },
         { label: 'Rejected', value: deptReferrals.filter((r) => r.status === 'rejected').length, colorClass: 'bg-red-500' },
     ]

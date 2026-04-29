@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useLanguage } from "../../context/LanguageContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
@@ -24,9 +24,9 @@ interface FormState {
   dateOfBirth: string;
   gender: string;
   phone: string;
-  receivingFacility?: string;
-  receivingDepartmentId?: string;
-  serviceType?: string;
+  receivingFacility: string;
+  receivingDepartmentId: string;
+  serviceType: string;
   priority: string;
   reasonForReferral: string;
   clinicalSummary: string;
@@ -63,6 +63,7 @@ const ETHIOPIAN_PHONE_REGEX = /^\+251\d{9}$/;
 
 export default function CreateReferral() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { t } = useLanguage();
   const { isDark } = useTheme();
@@ -235,6 +236,25 @@ export default function CreateReferral() {
     setEditPrefilled(true);
   }, [editPrefilled, editReferral, isEditMode]);
 
+  // Handle pre-fill from location state (for chaining referrals)
+  useEffect(() => {
+    const prefill = (location.state as any)?.prefill;
+    if (!prefill || editPrefilled) return;
+
+    setForm({
+      ...emptyForm,
+      patientName: prefill.patientName || "",
+      dateOfBirth: prefill.dateOfBirth || "",
+      gender: prefill.gender || "Male",
+      phone: prefill.phone || "",
+      priority: prefill.priority || "routine",
+      clinicalSummary: prefill.clinicalSummary || "",
+      primaryDiagnosis: prefill.primaryDiagnosis || "",
+      consent: true,
+    });
+    setEditPrefilled(true);
+  }, [location.state, editPrefilled]);
+
   const validate = (): boolean => {
     const e: Partial<Record<keyof FormState, string>> = {};
     if (!form.patientName.trim()) e.patientName = t("common.required");
@@ -284,14 +304,36 @@ export default function CreateReferral() {
     if (!validate()) return;
     setSubmitting(true);
     setSubmitError(null);
-    const payload = {
+    const payload: any = {
       ...buildCreateReferralPayload(form),
       status: mode === 'pending' ? 'pending_sending' : 'draft',
-      receivingFacilityId: undefined, // Explicitly clear for doctor submission
+      receivingFacilityId: undefined, // Explicitly clear for doctor submission to enforce liaison review
       receivingDepartmentId: undefined,
+      forwardingNote: (location.state as any)?.prefill?.parentReferralId 
+        ? `Re-referral linked to #${(location.state as any).prefill.parentReferralId}`
+        : undefined,
+      forwardedFromReferralId: (location.state as any)?.prefill?.parentReferralId || undefined,
     };
     try {
       const response = await trmsApi.createReferral(payload);
+      
+      // If this is a re-referral from a doctor, automatically close the parent referral
+      const parentId = (location.state as any)?.prefill?.parentReferralId;
+      if (parentId && mode === 'pending') {
+        try {
+          await trmsApi.addDischargeSummary(parentId, {
+            summary: `Patient re-referred to specialized hospital. New Referral ID: ${toDisplayReferralId(response.referralCode, response.id)}`,
+            finalDiagnosis: form.primaryDiagnosis || "Re-referral",
+            medicationsPrescribed: form.currentMedications || "As per previous records",
+            followUpInstructions: "Follow up at specialized facility",
+            dischargeDate: new Date().toISOString().split('T')[0],
+          });
+        } catch (closeError) {
+          console.error("Failed to auto-close parent referral:", closeError);
+          // We don't block the main flow if auto-closing fails, but we log it
+        }
+      }
+
       if (isEditMode && editReferralId) {
         try {
           await trmsApi.removeReferral(editReferralId);

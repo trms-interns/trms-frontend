@@ -77,7 +77,7 @@ export interface Referral {
     receivingFacility: string
     receivingDepartmentId?: string
     priority: 'emergency' | 'urgent' | 'routine'
-    status: 'draft' | 'pending' | 'synced' | 'failed' | 'accepted' | 'rejected' | 'forwarded' | 'completed'
+    status: 'draft' | 'pending_sending' | 'pending_receiving' | 'accepted' | 'rejected' | 'forwarded' | 'completed' | 'synced' | 'failed'
     chiefComplaint: string
     clinicalSummary: string
     primaryDiagnosis?: string
@@ -331,7 +331,7 @@ export const mockReferrals: Referral[] = [
         dateOfBirth: '1981-06-22',
         referringFacility: 'Adwa Health Center', referringUserId: 'USR-006',
         receivingFacility: 'Ayder Referral Hospital',
-        priority: 'urgent', status: 'pending',
+        priority: 'urgent', status: 'pending_receiving',
         chiefComplaint: 'Suspected appendicitis',
         clinicalSummary: 'Right lower quadrant pain for 2 days. McBurney point tenderness. WBC elevated. No peritoneal signs yet. Needs surgical consultation.',
         primaryDiagnosis: 'Acute appendicitis (suspected)',
@@ -372,7 +372,7 @@ export const mockReferrals: Referral[] = [
         dateOfBirth: '1991-09-20',
         referringFacility: 'Enticho Health Center',
         receivingFacility: 'Shire Suhul Hospital',
-        priority: 'urgent', status: 'pending',
+        priority: 'urgent', status: 'pending_receiving',
         chiefComplaint: 'Post-partum hemorrhage',
         clinicalSummary: 'Delivered 6 hours ago. Continued heavy bleeding. Uterus boggy on palpation. Oxytocin given IM. Needs emergency obstetric care.',
         primaryDiagnosis: 'Post-partum haemorrhage',
@@ -398,7 +398,7 @@ export const mockReferrals: Referral[] = [
         dateOfBirth: '2007-02-14',
         referringFacility: 'Zalambessa Health Center',
         receivingFacility: 'Adigrat General Hospital',
-        priority: 'urgent', status: 'pending',
+        priority: 'urgent', status: 'pending_receiving',
         chiefComplaint: 'Trauma — road traffic accident',
         clinicalSummary: 'Fall from motorcycle. Deep laceration right forearm, possible fracture. Bleeding controlled with pressure dressing. Tetanus status unknown.',
         primaryDiagnosis: 'Open fracture right forearm (suspected)',

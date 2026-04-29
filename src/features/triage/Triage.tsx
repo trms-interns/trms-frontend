@@ -82,7 +82,7 @@ export default function Triage() {
     const { t } = useLanguage()
     const { isDark } = useTheme()
     const { user } = useAuth()
-    const { referrals, completeReferral, refreshReferrals } = useReferrals()
+    const { referrals, completeReferral, refreshReferrals, dischargeSummaries } = useReferrals()
 
     const [actions, setActions] = useState<TriageActionRecord[]>([])
     const [selectedRef, setSelectedRef] = useState<string | null>(null)
@@ -185,6 +185,7 @@ export default function Triage() {
     })
 
     const selected = filteredQueueReferrals.find(r => r.id === selectedRef) || null
+    const selectedDS = selected ? dischargeSummaries.find(ds => ds.referralId === selected.id) : null
 
     // Urgency groups
     const emergency = filteredQueueReferrals.filter(r => r.priority === 'emergency')
@@ -674,6 +675,32 @@ export default function Triage() {
                                     {selected.hasImage && (
                                         <div className={`p-3 rounded-lg text-[11px] ${isDark ? 'bg-surface-950 text-surface-400' : 'bg-surface-50 text-surface-500'}`}>
                                             📎 1 image attachment
+                                        </div>
+                                    )}
+                                    {selectedDS && (
+                                        <div className={`mt-4 p-4 rounded-xl border-2 animate-fade-in ${isDark ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-emerald-50 border-emerald-200'}`}>
+                                            <p className="text-[10px] font-bold text-emerald-600 uppercase mb-2">Outcome Summary</p>
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between items-start gap-4">
+                                                    <div>
+                                                        <p className="text-[10px] text-surface-500 uppercase font-bold">Final Diagnosis</p>
+                                                        <p className="text-sm font-bold text-emerald-500">{selectedDS.finalDiagnosis}</p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-[10px] text-surface-500 uppercase font-bold">Closed On</p>
+                                                        <p className="text-xs font-semibold">{new Date(selectedDS.dischargeDate).toLocaleDateString()}</p>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] text-surface-500 uppercase font-bold">Note</p>
+                                                    <p className="text-sm leading-relaxed italic">"{selectedDS.treatmentSummary}"</p>
+                                                </div>
+                                                {selectedDS.followUpInstructions && (
+                                                    <div className={`p-2.5 rounded-lg text-xs ${isDark ? 'bg-surface-950/50 text-surface-400 border border-surface-800' : 'bg-white/50 text-surface-600 border border-surface-200'}`}>
+                                                        <span className="font-bold">Instructions:</span> {selectedDS.followUpInstructions}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     )}
                                 </div>

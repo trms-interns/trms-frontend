@@ -93,6 +93,8 @@ export interface CreateReferralRequest {
     pastMedicalHistory?: string
     currentMedications?: string
     status?: 'draft' | 'pending_receiving' | 'pending_sending'
+    forwardedFromReferralId?: string
+    forwardingNote?: string
 }
 
 export interface CreateReferralFormValues {
